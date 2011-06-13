@@ -1,0 +1,319 @@
+\documentclass{beamer}
+
+\author{Aleksandar Dimitrov}
+\title{Predicting Functional Elements in German}
+
+\usepackage[utf8]{inputenc}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}
+\frametitle{Outline}
+\tableofcontents
+\end{frame}
+
+\begin{frame}
+\frametitle{The Problem}
+Functional elements exist as syntactic markers without (or with little) semantic
+value
+\begin{itemize}
+\item Articles (esp. in the case of grammatical gender)
+\item Prepositions (often mandated by verbs or syntactical structure)
+\end{itemize}
+{\small Note: this is mostly a Indo-European (inflectional) view. There might be
+significant differences for other language families.}
+\begin{itemize}
+\item Since they carry no meaning, FE use should be governed by purely
+distributional properties (similar to allophones in phonetics)
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Prior Work}
+
+\begin{itemize}
+\item (De Felice and Pulman 2007) and (De Felice 2008) work on predicting prepositions from given
+syntactic and lexical contexts using a voted perceptron algorithm
+\item (Gamon et. al 2008) work on learner language, using a Gigaword n-gram
+based classifier
+\item (Tetreault and Chodorw 2008) work on text from language learners using a
+maximum entropy classifier
+\item (Bergsma et al. 2009) use Google 5-grams to train an SVM-based
+classifier\pause
+\item (Elghafari, Meurers, Wunsch 2010) predict prepositions in normal text using
+a quantitative web-as-corpus approach
+\item All work (I know of) has been done for English only
+\end{itemize}
+How will we perform on German?
+\end{frame}
+
+\section{Motivation}
+\begin{frame}
+\frametitle{Motivation}
+\begin{itemize}
+\item This task sees high accuracy figures across the board for English
+\item German has a richer morphology, aiding us by providing more contextual
+information, but also reducing likelihood of recognizable contexts
+\item German has freer word order, increasing difficulty of this task
+\item There might be more lexically {\em different} (and frequently used)
+prepositions in German than in English
+\item German has zircumpositions ({\it aus \ldots{} heraus}) and other funky
+syntactic constructions
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Helping Language Learners}
+
+\begin{itemize}
+\item Preposition and article errors are among the most frequent mistakes in SLA
+\item Since (ideally) semantics should not play a role, FE prediction should be
+possible
+\item Even so, bad quality of learner language will skew distribution-based
+prediction
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Also Helping Language "Knowers"}
+\framesubtitle{a.k.a. 'Spell Czech'}
+
+\begin{itemize}
+\item Overall much better quality of surrounding language should aid
+quantitative methods
+\item Errors in preposition (Tetreault and Chodorow 2008) and determiner (Turner
+and Charniak 2007) use are among the most frequent for learners in general, but
+also among speakers with good command of the language
+\item Easier than in the case for language learning (fewer other mistakes,
+longer, well-structured sentences provide context to work with)
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Uses in Language Synthesis}
+
+\begin{itemize}
+\item Language synthesis is used to realize machine-represented statements as
+language
+\item FE prediction in machine translation: FEs are usually incompatible across
+languages
+\item Knowledge engine and semantic representation systems do not compute with
+syntactic fluff (such as FEs)
+\item Example: {\it I went \alert{to} school \alert{yesterday}}\\
+$\to$ {\tt
+go(tense:past-simple\\
+  ,adv:[yesterday,\#non-habitual]\\
+  ,agent:\#speaker,patient:school) }
+\\$\to${\tt
+gehen(tense:präteritum,\\adv:[gestern,\#non-habitual],\\agent:\#speaker,patient:Schule) }
+\\$\to$ {\it  Ich ging \alert{gestern} \alert{zur} Schule.}
+\end{itemize}
+\end{frame}
+
+\section{Method}
+\begin{frame}
+\frametitle{Method}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{The Data}
+
+\begin{itemize}
+\item German DEWAC corpus (German Web as Corpus)
+\item Baroni and Kilgarriff 2006, available for multiple languages
+\item Tree-Tagger tagged, with lemma information
+\item 24 GB of plain text
+\item Generally rather noisy, but also very decent, for the size of the corpus
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Challenges}
+
+\begin{itemize}
+\item Large corpus data needed to be efficiently parsed and evaluated
+\item Relatively noisy data needs to be handled robustly
+\item Since a lot of the "meat" of the work was due to trial-and-error on huge data
+sets, efficient
+choices for implementation and data base backend were necessary
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Training}
+
+\begin{itemize}
+\item Training the current system takes 22hrs on recent hardware.
+\item Resulting data base size is around 12GB.
+\item Bottlenecks are: hard disk access, RAM availability, data base interaction
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{The Matching Algorithm}
+
+\begin{itemize}
+\item Direct surface matches are not always possible
+\item Clever backoff is key to realizing a strong recall
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{A demonstration}
+
+\only<1>{Original item.}
+\only<2>{Remove preposition, save as target}
+\only<3>{Query with all numbers as {\tt CARD}}
+\only<4>{Query with all named entities as {\tt NE}}
+\only<5>{Query with all finite verbs as lemmas}
+\only<6>{Query with far left and far right context as PoS tag}
+\only<7>{Query with middle left and middle right context as PoS tag}
+\only<8>{Query with close left and close right context as PoS tag}
+
+\alt<-5>{Nach}{APPR}  \alt<-2>{1990}{CARD}
+\temporal<5-7>{geschah}{geschehen}{VVFIN}
+\uncover<-1>{auf} \alt<-3>{Malta}{NE} \alt<-6>{fast}{ADV}
+\alt<-5>{nichts}{PTKNEG}\alt<9>{.}{.} \uncover<2->{$\to$ auf}
+
+\end{frame}
+\begin{frame}
+\frametitle{A demonstration}
+
+\only<1>{Backoff}
+\only<2>{Query with all numbers as {\tt CARD}}
+\only<3>{Query with all named entities as {\tt NE}}
+\only<4>{Query with all finite verbs as lemmas}
+\only<5>{Query with far left and far right context as PoS tag}
+\only<6>{Query with close left and close right context as PoS tag}
+
+\alt<-1>{1990}{CARD}
+\temporal<4-5>{geschah}{geschehen}{VVFIN}
+\mbox{   } \alt<-2>{Malta}{NE} \alt<-4>{fast}{ADV}
+{$\to$ auf}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{A demonstration}
+
+\only<1>{Backoff}
+\only<2>{Query with all numbers as {\tt CARD}}
+\only<3>{Query with all named entities as {\tt NE}}
+\only<4>{Query with all finite verbs as lemmas}
+\only<5>{Query with left and right context as PoS tag}
+
+\temporal<4-4>{geschah}{geschehen}{VVFIN}
+\mbox{   } \alt<-2>{Malta}{NE}
+{$\to$ auf}
+
+\only<6>{Majority baseline: in}\only<7>{}{}
+
+\end{frame}
+\section{Results}
+\begin{frame}
+\frametitle{Results}
+\begin{itemize}
+\item Prohibitive training and evaluation costs make analysis and incremental
+improvement a day-long endeavour
+\item Preliminary results on total accuracy, precision and recall are available
+\item More detailed analysis data for recall \& precision during every step of
+the matching algorithm is on the way
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{What is Performance, Anyway?}
+
+\begin{itemize}
+\item The ultimate goal is predicting prepositions in the chosen set
+correctly\\\alert{Precision:} How many did were predicted correctly?
+\item But we want to do so based on prior evidence, not wild guessing\\
+\alert{Recall:} How many times were we able to find an item in the database (in any
+form?)
+\item Backoff will tend to increase overall recall, at the cost of precision\\(This is
+as it should be.)
+\item Graphed figures of precision and recall of the whole algorithm yield
+effectiveness estimates of every step (cumulatively, or separately.)
+\end{itemize}
+\end{frame}
+
+\section{Future Work}
+\begin{frame}
+\frametitle{Future Work}
+\begin{itemize}
+\item Current db-based design is slow to train
+\item Expensive to run or redistribute
+\item Limited to predicting a handful of prepositions
+\item Depends on shallow linguistic processing and {\em huge} amounts of input
+data to do well
+\item Isn't particularly smart or ingenuous
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Using Machine Learning}
+
+\begin{itemize}
+\item The context database is around 50\% the size of the original corpus
+\item Prohibitive lookup costs and portability
+\item Lossy compression could be used to increase viability for particular
+purposes
+\item N-Gram based Language models, in particular {\tt SLIRM} or {\tt BerkeleyLM}
+seem a good fit
+\item How well would a memory based learner perform (k-nearest neighbour seems
+similar to the matching algorithm?)
+\item Other methods? (HMM guided automata, maximum entropy language models, …)
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Predicting Sets of Prepositions Instead}
+
+\begin{itemize}
+\item Frequently, items that are also FEs {\em do} carry {\em some} meaning
+\item Indiscernible when looking at the surface form
+\item Sometimes, multiple FEs are admissible and it is not possible to make a
+distinction (either a lot of linguistic or world knowledge is required, or there
+isn't a distinction)
+\item Example (semantic meaning:) {\it Der Hund war \{neben,unter,über,auf,\ldots\} dem Tisch}
+\item For grammatic correction of SLLs or even native speakers, predicting {\em
+sets} of admissible FEs in a given context might be enough (or even much more
+desirable)
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Automatic Detection of Collapsible Classes}
+
+\begin{itemize}
+\item {\tt CARD}, {\tt NE}, lemmas, etc. are arbitrarily chosen
+\item Algorithms exist to detect possible classes of local variability in large
+data sets
+\begin{enumerate}
+\item Change \alert {one} thing in a context item
+\item How many cases exist with only this one item changed?
+\item On average (and in particular,) how do the distributional properties of
+those cases compare?
+\end{enumerate}
+\item Conceptually easy to implement, \alert {but}
+\item Have to choose sensible thresholds or estimate intelligently
+\item Operation as a whole would be very slow
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Beyond Words: Functional Elements in Syntax and Morphology}
+The general case of a functional element is too general, and unlikely to be
+solved only once, with one method.
+\begin{itemize}
+\item Morphology: Case markings, agglutinated prepositions or articles
+\item Syntax: Word order
+\end{itemize}
+\end{frame}
+
+\end{document}

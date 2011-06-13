@@ -7,3 +7,5 @@ dist
 /old
 /db
 /corpora
+texdir
+*.aux
