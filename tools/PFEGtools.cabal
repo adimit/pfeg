@@ -1,0 +1,23 @@
+Name:          PFEGtools
+Version:       0.0.1
+Cabal-Version: >= 1.2
+License:       BSD3
+Author:        Aleksandar Dimitrov <aleks.dimitrov@gmail.com>
+Synopsis:      Tools for predicting functional elements in German.
+Category:      NLP
+Build-type:    Simple
+
+Executable wac2tt
+    Build-Depends:    base, bytestring, zlib
+    Main-is:          wac2tt.hs
+    ghc-options:      -O2 -Wall
+
+Executable ttCountTag
+    Build-Depends:    base, bytestring, containers
+    Main-is:          ttCountTag.hs
+    ghc-options:      -O2 -Wall
+
+Executable tuba2tt
+    Build-Depends:    base, bytestring, hexpat
+    Main-is:          tuba2tt.hs
+    ghc-options:      -O2 -Wall
