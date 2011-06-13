@@ -14,9 +14,8 @@ import qualified Data.ByteString.Lazy.Char8 as B
 import Codec.Compression.GZip (decompress)
 import Data.List (isSuffixOf)
 
-import Data.Char (toLower)
-
 import System.Environment (getArgs)
+import Prelude hiding (unzip)
 
 transform :: ByteString -> ByteString
 transform = B.concat . map perLine . B.lines
