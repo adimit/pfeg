@@ -1,0 +1,9 @@
+.*.swo
+.*.swp
+*~
+dist
+*.hi
+*.o
+/old
+/db
+/corpora
