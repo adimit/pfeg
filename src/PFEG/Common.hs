@@ -9,17 +9,13 @@ module PFEG.Common
     , doTimed_
     ) where
 
+import PFEG.Types
 import Data.Time.Clock
 import qualified Data.HashMap.Strict as T
 import qualified Data.Text as X
 
-type Wordcounts = T.HashMap X.Text Int
-
-data Configuration = Config { unigramTable :: String }
-
 standardConfig :: Configuration
-standardConfig = Config
-    { unigramTable = "unigrams" }
+standardConfig = Config { unigramTable = "unigrams" }
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do
