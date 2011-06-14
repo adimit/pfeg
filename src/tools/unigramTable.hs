@@ -41,8 +41,8 @@ type Insertion = [(X.Text,Int)] -> IO ()
 makeUpsert :: Connection -> IO Insertion
 makeUpsert conn = do
     ins <- prepare conn $
-      "INSERT OR REPLACE INTO"++ (unigramTable standardConfig) ++" (form,count) VALUES"
-      ++ "(?,COALESCE((SELECT count FROM unigrams WHERE form == ?)+?,?))"
+      "INSERT OR REPLACE INTO "++ (unigramTable standardConfig) ++" (form,count) VALUES"
+      ++ " (?,COALESCE((SELECT count FROM unigrams WHERE form == ?)+?,?))"
     return $ executeMany ins.map makeSQLFields
 
 makeSQLFields :: (X.Text,Int) -> [SqlValue]
