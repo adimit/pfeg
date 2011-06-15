@@ -5,12 +5,17 @@ module PFEG.Types
     , TextContext
     , IdxContext
     , Table
+    , TableAccess(..)
     ) where
 
 import Data.Int
 import qualified Data.ByteString as S
 import qualified Data.Text as X
 import qualified Data.HashMap.Strict as T
+import Database.HDBC
+import Database.HDBC.Sqlite3
+
+data TableAccess = Access { connection :: Connection, table :: Table }
 
 type Wordcounts = T.HashMap X.Text Int
 data Configuration = Config { unigramTable :: String }
