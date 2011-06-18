@@ -1,11 +1,13 @@
 module PFEG.Types
     ( Wordcounts
+    , Word
     , Configuration(..)
     , Context(..)
     , TextContext
     , IdxContext
     , Table
     , TableAccess(..)
+    , Item(..)
     ) where
 
 import Data.Int
@@ -18,6 +20,8 @@ import Database.HDBC.Sqlite3
 data TableAccess = Access { connection :: Connection, table :: Table }
 
 type Wordcounts = T.HashMap X.Text Int
+type Word a = (a,a,a)
+
 data Configuration = Config { lemmaTable   :: String
                             , posTable     :: String
                             , unigramTable :: String
@@ -32,3 +36,5 @@ data Context a = Context3 a a a a a a
                | Context2   a a a a
                | Context1     a a
                deriving (Show)
+
+data Item a i = Item { target :: i, Context a }
