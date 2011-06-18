@@ -37,4 +37,4 @@ data Context a = Context3 a a a a a a
                | Context1     a a
                deriving (Show)
 
-data Item a i = Item { target :: i, Context a }
+data Item a i = Item { target :: i, context :: a }
