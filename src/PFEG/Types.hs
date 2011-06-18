@@ -18,7 +18,10 @@ import Database.HDBC.Sqlite3
 data TableAccess = Access { connection :: Connection, table :: Table }
 
 type Wordcounts = T.HashMap X.Text Int
-data Configuration = Config { unigramTable :: String }
+data Configuration = Config { lemmaTable   :: String
+                            , posTable     :: String
+                            , unigramTable :: String
+                            , targets      :: [String] }
 
 type TextContext = Context S.ByteString
 type IdxContext  = Context Int32

@@ -15,7 +15,11 @@ import qualified Data.HashMap.Strict as T
 import qualified Data.Text as X
 
 standardConfig :: Configuration
-standardConfig = Config { unigramTable = "unigrams" }
+standardConfig = Config { lemmaTable   = "lemmas"
+                        , posTable     = "pos"
+                        , unigramTable = "unigrams"
+                        , targets      = [ "in" , "von" , "mit", "für", "im"
+                                         , "auf", "nach", "an" , "aus", "am"] }
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do
