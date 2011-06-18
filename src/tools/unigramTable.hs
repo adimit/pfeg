@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Main where
 
 import qualified Data.ByteString.Char8 as B
@@ -27,12 +28,11 @@ wordIter f = I.joinI $ (enumLinesBS I.><> I.filter (not.B.null)) f
 
 composition :: Monad m => I.Iteratee [ByteString] m Wordcounts
 composition = I.foldl' folder T.empty
-    
-convert :: ByteString -> X.Text
-convert = X.toCaseFold.head.X.split (=='\t').decodeUtf8
 
 folder :: Wordcounts -> ByteString -> Wordcounts
-folder t s = T.insertWith (+) (convert s) 1 t
+folder t = foldl' (\t' b -> T.insertWith (+) b 1 t') t . convert
+    where convert bs = let !(w:t:r:[]) = X.split (=='\t').decodeUtf8 $ bs
+                       in (X.toCaseFold $! w):t:(X.toCaseFold r):[]
 
 mapRedComp :: Monad m => Int -> I.Iteratee [ByteString] m Wordcounts
 mapRedComp n = I.mapReduce n (foldl' folder T.empty)
