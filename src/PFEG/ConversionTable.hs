@@ -15,7 +15,6 @@ import Data.Int
 import Data.Convertible.Base (Convertible)
 
 -- Convenient IO wrappers around SQL statements.
-
 sqlIndex2Form, sqlForm2Index :: String
 sqlIndex2Form = "SELECT form FROM " ++ (unigramTable standardConfig) ++ " WHERE id==?"
 sqlForm2Index = "SELECT id FROM " ++ (unigramTable standardConfig) ++ " WHERE form==?"
