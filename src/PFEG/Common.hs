@@ -51,8 +51,7 @@ wordP = do surface <- takeTill (==tab8)
                     , X.toCaseFold.decodeUtf8 $ lemma)
 
 sentenceP :: Parser (Sentence Text)
-sentenceP = do words <- wordP `manyTill` (word8 nl8) <* skipWhile (==nl8)
-               return words
+sentenceP = return =<< wordP `manyTill` (word8 nl8) <* skipWhile (==nl8)
 
 c28 :: Char -> Word8
 c28 = fromIntegral.fromEnum
