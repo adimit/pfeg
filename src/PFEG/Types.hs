@@ -40,7 +40,4 @@ data Context a = Context3 a a a a a a
                | Context1     a a
                deriving (Show)
 
-data Item a i = Item { target :: i
-                     , surfaceContext :: Context a
-                     , postagContext  :: Context a
-                     , lemmaContext   :: Context a }
+type Item a i = (Context a,i)
