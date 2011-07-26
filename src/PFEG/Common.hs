@@ -29,6 +29,7 @@ import Data.Word (Word8)
 standardConfig :: Configuration
 standardConfig = Config { lemmaTable   = "lemmas"
                         , posTable     = "pos"
+                        , contextTable = "context7"
                         , unigramTable = "unigrams"
                         , targets      = [ "in" , "von" , "mit", "für", "im"
                                          , "auf", "nach", "an" , "aus", "am"] }

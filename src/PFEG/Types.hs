@@ -26,6 +26,7 @@ type Sentence a = [Word a]
 
 data Configuration = Config { lemmaTable   :: String
                             , posTable     :: String
+                            , contextTable :: String
                             , unigramTable :: String
                             , targets      :: [String] }
 
