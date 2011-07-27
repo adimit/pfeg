@@ -14,8 +14,8 @@ import Data.ByteString (ByteString)
 
 import Data.Iteratee.IO
 import qualified Data.Iteratee as I
+import Data.Iteratee.Parallel as IP
 
-import Data.Attoparsec
 import Data.Attoparsec.Iteratee
 
 import qualified Data.Text as T
@@ -38,14 +38,21 @@ establishConnections unigramT contextT = do
                           , table = contextTable standardConfig }
     return (unigramA,contextA)
 
-corpusI :: (Monad m) => I.Iteratee ByteString m [Sentence Text]
-corpusI = parserToIteratee (many sentenceP)
+corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
+corpusI = parserToIteratee sentenceP
 {-# INLINE corpusI #-}
 
-recordI :: Statement -> Statement -> I.Iteratee [Sentence Text] IO ()
-recordI lookupS recordS = I.mapM_ $
-    mapM_ (doTimed_ . (indexItem lookupS >=> recordItem recordS) >=> putStrLn.show)
-          . getItems
+recordI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
+recordI lookupS recordS = I.mapChunksM_ $
+    mapM_ (doTimed_ . indexAndRecord >=> putStrLn . show) . getItems
+    where indexAndRecord = indexItem lookupS >=> recordItem recordS
+
+recordAndLogI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
+recordAndLogI lookupS recordS = IP.psequence_
+    [recordI lookupS recordS,I.mapChunksM_ (putStrLn.renderSentence)]
+
+renderSentence :: Sentence Text -> String
+renderSentence = unwords . map (T.unpack.fst3)
 
 recordItem :: Statement -> Item Int32 Text -> IO ()
 recordItem stmt (ctx,t) =
@@ -59,14 +66,15 @@ getItems :: Sentence Text -> [Item Text Text]
 getItems s = let indices = findIndices (\(w,_,_) -> w `elem` targets') s
              in  concat $ map (splitItem.getItem s) indices
 
+getItems' :: [Sentence Text] -> [Item Text Text]
+getItems' []     = []
+getItems' (s:ss) = getItems s ++ getItems' ss
+
 splitItem :: Item (Word Text) Text -> [Item Text Text]
 splitItem (ctx,i) = [(ctxMap fst3 ctx,i),(ctxMap snd3 ctx,i),(ctxMap trd3 ctx,i)]
 
 indexItem :: Statement -> Item Text Text -> IO (Item Int32 Text)
 indexItem stmt (ctx,i) = do ctxMapM (lookupIndex stmt) ctx >>= return.(,i)
-
-bigfuckingdeal :: Statement -> Statement -> I.Iteratee ByteString IO ()
-bigfuckingdeal lookupS recordS = I.joinI $ I.convStream corpusI (recordI lookupS recordS)
 
 lookupIndex :: Statement -> Text -> IO Int32
 lookupIndex stmt t =
@@ -104,7 +112,8 @@ main = do
     recordContextStatement       <- recordContextSQL contextA
     putStrLn "Connections established!"
 
-    fileDriverVBuf 65536 (bigfuckingdeal lookupIndexStatement recordContextStatement) corpus
+    I.run =<< (enumFile 65536 corpus $ I.joinI $
+        I.convStream corpusI (recordAndLogI lookupIndexStatement recordContextStatement))
 
     putStrLn "Committing…"
     commit (connection contextA)
