@@ -13,6 +13,7 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.Iteratee.Char
 import Data.Iteratee.IO
 import qualified Data.Iteratee as I
+import qualified Data.Iteratee.Parallel as IP
 
 import qualified Data.HashMap.Strict as T
 
@@ -23,7 +24,7 @@ import System.Environment (getArgs)
 
 import PFEG.Common
 
-wordIter :: (Monad m) => I.Iteratee [ByteString] m a -> I.Iteratee ByteString m a
+wordIter :: (Monad m, Functor m) => I.Iteratee [ByteString] m a -> I.Iteratee ByteString m a
 wordIter f = I.joinI $ (enumLinesBS I.><> I.filter (not.B.null)) f
 
 composition :: Monad m => I.Iteratee [ByteString] m Wordcounts
@@ -35,7 +36,7 @@ folder t = foldl' (\t' b -> T.insertWith (+) b 1 t') t . convert
                        in (X.toCaseFold $! w):t:(X.toCaseFold r):[]
 
 mapRedComp :: Monad m => Int -> I.Iteratee [ByteString] m Wordcounts
-mapRedComp n = I.mapReduce n (foldl' folder T.empty)
+mapRedComp n = IP.mapReduce n (foldl' folder T.empty)
 
 type Insertion = [(X.Text,Int)] -> IO ()
 makeUpsert :: Connection -> IO Insertion
