@@ -50,12 +50,12 @@ wordP = do surface <- takeTill (==tab8)
            tag     <- skip (==tab8) *> takeTill (==tab8)
            lemma   <- skip (==tab8) *> takeTill (==nl8)
            skip (==nl8)
-           return $ ( X.toCaseFold.decodeUtf8 $ surface
-                    ,              decodeUtf8   tag
-                    , X.toCaseFold.decodeUtf8 $ lemma)
+           return ( X.toCaseFold.decodeUtf8 $ surface
+                  ,              decodeUtf8   tag
+                  , X.toCaseFold.decodeUtf8 $ lemma)
 
 sentenceP :: Parser (Sentence Text)
-sentenceP = return =<< wordP `manyTill` (word8 nl8) <* skipWhile (==nl8)
+sentenceP = return =<< wordP `manyTill` word8 nl8 <* skipWhile (==nl8)
 
 c28 :: Char -> Word8
 c28 = fromIntegral.fromEnum

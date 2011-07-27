@@ -28,6 +28,7 @@ import Data.Int (Int32)
 import Control.Monad ((>=>))
 import Safe (atMay)
 
+
 establishConnections :: FilePath -> FilePath -> IO (TableAccess,TableAccess)
 establishConnections unigramT contextT = do
     unigramC <- connectSqlite3 unigramT
@@ -44,12 +45,27 @@ corpusI = parserToIteratee sentenceP
 
 recordI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
 recordI lookupS recordS = I.mapChunksM_ $
-    mapM_ (doTimed_ . indexAndRecord >=> putStrLn . show) . getItems
+    mapM_ (doTimed_ . indexAndRecord >=> print). getItems
     where indexAndRecord = indexItem lookupS >=> recordItem recordS
 
 recordAndLogI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
 recordAndLogI lookupS recordS = IP.psequence_
     [recordI lookupS recordS,I.mapChunksM_ (putStrLn.renderSentence)]
+
+recordAndLogI' :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
+recordAndLogI' lookupS recordS = I.joinI . I.mapChunks getItems . IP.psequence_ $
+    [recordI' lookupS recordS, I.mapChunksM_ (mapM_ (putStrLn.renderItem))]
+
+recordI' :: Statement -> Statement -> I.Iteratee [Item Text Text] IO ()
+recordI' lookupS recordS = I.mapChunksM_ $
+    doTimed_ . (mapM_ indexAndRecord) >=> print.("Took " ++).show
+    where indexAndRecord = indexItem lookupS >=> recordItem recordS
+
+renderItem :: Item Text Text -> String
+renderItem ((Context3 a b c d e f),t) =
+    T.unpack.T.unwords $ [op,a,b,c,op,t,cl,d,e,f,cl]
+    where op = T.singleton '['
+          cl = T.singleton ']'
 
 renderSentence :: Sentence Text -> String
 renderSentence = unwords . map (T.unpack.fst3)
@@ -64,17 +80,13 @@ targets' = map T.pack $ targets standardConfig
 
 getItems :: Sentence Text -> [Item Text Text]
 getItems s = let indices = findIndices (\(w,_,_) -> w `elem` targets') s
-             in  concat $ map (splitItem.getItem s) indices
-
-getItems' :: [Sentence Text] -> [Item Text Text]
-getItems' []     = []
-getItems' (s:ss) = getItems s ++ getItems' ss
+             in  concatMap (splitItem.getItem s) indices
 
 splitItem :: Item (Word Text) Text -> [Item Text Text]
 splitItem (ctx,i) = [(ctxMap fst3 ctx,i),(ctxMap snd3 ctx,i),(ctxMap trd3 ctx,i)]
 
 indexItem :: Statement -> Item Text Text -> IO (Item Int32 Text)
-indexItem stmt (ctx,i) = do ctxMapM (lookupIndex stmt) ctx >>= return.(,i)
+indexItem stmt (ctx,i) = fmap (,i) (ctxMapM (lookupIndex stmt) ctx)
 
 lookupIndex :: Statement -> Text -> IO Int32
 lookupIndex stmt t =
@@ -112,8 +124,8 @@ main = do
     recordContextStatement       <- recordContextSQL contextA
     putStrLn "Connections established!"
 
-    I.run =<< (enumFile 65536 corpus $ I.joinI $
-        I.convStream corpusI (recordAndLogI lookupIndexStatement recordContextStatement))
+    I.run =<< enumFile 65536 corpus (I.joinI $
+        I.convStream corpusI (recordAndLogI' lookupIndexStatement recordContextStatement))
 
     putStrLn "Committing…"
     commit (connection contextA)

@@ -16,8 +16,8 @@ import Data.Convertible.Base (Convertible)
 
 -- Convenient IO wrappers around SQL statements.
 sqlIndex2Form, sqlForm2Index :: String
-sqlIndex2Form = "SELECT form FROM " ++ (unigramTable standardConfig) ++ " WHERE id==?"
-sqlForm2Index = "SELECT id FROM " ++ (unigramTable standardConfig) ++ " WHERE form==?"
+sqlIndex2Form = "SELECT form FROM " ++ unigramTable standardConfig ++ " WHERE id==?"
+sqlForm2Index = "SELECT id FROM " ++ unigramTable standardConfig ++ " WHERE form==?"
 
 convertValue :: String -> TableAccess -> SqlValue -> IO SqlValue
 convertValue sql acc = fmap (head.concat).quickQuery (connection acc) sql . (:[])
@@ -39,4 +39,4 @@ iX acc sql c = case c of
                                        return $ Context2     a2' a3' a4' a5'
     (Context1       a3 a4      ) -> do (        a3':a4'        :[]) <- f [      a3,a4      ]
                                        return $ Context1         a3' a4'
-    where f = (mapM (fmap fromSql.convertValue sql acc.toSql))
+    where f = mapM (fmap fromSql.convertValue sql acc.toSql)
