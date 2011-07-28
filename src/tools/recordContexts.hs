@@ -49,7 +49,7 @@ recordAndLogI' lookupS recordS = I.joinI . I.mapChunks getItems . IP.psequence_ 
 
 recordI' :: Statement -> Statement -> I.Iteratee [Item Text Text] IO ()
 recordI' lookupS recordS = I.mapChunksM_ $
-    doTimed_ . (mapM_ indexAndRecord) >=> print.("Took " ++).show
+    doTimed_ . mapM_ indexAndRecord >=> print.("Took " ++).show
     where indexAndRecord = indexItem lookupS >=> recordItem recordS
 
 renderItem :: Item Text Text -> String
