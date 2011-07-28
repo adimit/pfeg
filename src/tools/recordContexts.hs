@@ -43,15 +43,6 @@ corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
 {-# INLINE corpusI #-}
 
-recordI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
-recordI lookupS recordS = I.mapChunksM_ $
-    mapM_ (doTimed_ . indexAndRecord >=> print). getItems
-    where indexAndRecord = indexItem lookupS >=> recordItem recordS
-
-recordAndLogI :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
-recordAndLogI lookupS recordS = IP.psequence_
-    [recordI lookupS recordS,I.mapChunksM_ (putStrLn.renderSentence)]
-
 recordAndLogI' :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
 recordAndLogI' lookupS recordS = I.joinI . I.mapChunks getItems . IP.psequence_ $
     [recordI' lookupS recordS, I.mapChunksM_ (mapM_ (putStrLn.renderItem))]
