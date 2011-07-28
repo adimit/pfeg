@@ -53,10 +53,13 @@ recordI' lookupS recordS = I.mapChunksM_ $
     where indexAndRecord = indexItem lookupS >=> recordItem recordS
 
 renderItem :: Item Text Text -> String
-renderItem ((Context3 a b c d e f),t) =
-    T.unpack.T.unwords $ [op,a,b,c,op,t,cl,d,e,f,cl]
-    where op = T.singleton '['
-          cl = T.singleton ']'
+renderItem (ctx,t) = 
+    let op = T.singleton '['
+        cl = T.singleton ']'
+        l  = case ctx of (Context3 a b c d e f) -> [op,a,b,c,op,t,cl,d,e,f,cl]
+                         (Context2   b c d e  ) -> [op,  b,c,op,t,cl,d,e,  cl]
+                         (Context1     c d    ) -> [op,    c,op,t,cl,d,    cl]
+    in T.unpack.T.unwords $ l
 
 renderSentence :: Sentence Text -> String
 renderSentence = unwords . map (T.unpack.fst3)
