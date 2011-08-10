@@ -28,17 +28,6 @@ import Data.Int (Int32)
 import Control.Monad ((>=>))
 import Safe (atMay)
 
-
-establishConnections :: FilePath -> FilePath -> IO (TableAccess,TableAccess)
-establishConnections unigramT contextT = do
-    unigramC <- connectSqlite3 unigramT
-    contextC <- connectSqlite3 contextT
-    let unigramA = Access { connection = unigramC
-                          , table = unigramTable standardConfig }
-        contextA = Access { connection = contextC
-                          , table = contextTable standardConfig }
-    return (unigramA,contextA)
-
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
 {-# INLINE corpusI #-}
@@ -113,7 +102,8 @@ getItem s i = let indices = [i-3..i+3] -- ^ full context window around target in
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs
-    (unigramA,contextA)          <- establishConnections unigramT contextT
+    unigramA <- establishConnection (unigramTable standardConfig) unigramT
+    contextA <- establishConnection (contextTable standardConfig) contextT
     lookupIndexStatement         <- lookupIndexSQL unigramA
     recordContextStatement       <- recordContextSQL contextA
     putStrLn "Connections established!"

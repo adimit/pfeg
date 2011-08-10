@@ -13,6 +13,8 @@ module PFEG.Common
       -- * Utility functions for context items
     , ctxMap
     , ctxMapM
+      -- * SQL Utility functions
+    , establishConnection
     ) where
 
 import PFEG.Types
@@ -25,6 +27,8 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.Attoparsec
 import Control.Applicative hiding (many)
 import Data.Word (Word8)
+
+import Database.HDBC.Sqlite3
 
 standardConfig :: Configuration
 standardConfig = Config { lemmaTable   = "lemmas"
@@ -81,3 +85,8 @@ ctxMapM k (Context2   b c d e  ) =
 ctxMapM k (Context1     c d    ) =
        do (      c':d':      []) <- mapM k [    c,d    ]
           return $ Context1       c' d'
+
+establishConnection :: String -> FilePath -> IO TableAccess
+establishConnection tn fp = do
+    conn <- connectSqlite3 fp
+    return $ Access { connection = conn , table = tn }
