@@ -86,6 +86,8 @@ ctxMapM k (Context1     c d    ) =
        do (      c':d':      []) <- mapM k [    c,d    ]
           return $ Context1       c' d'
 
+-- | Create a @TableAccess@ data structure from a @String@, denotating the table
+-- name within the db file, and a @FilePath@ for the db file
 establishConnection :: String -> FilePath -> IO TableAccess
 establishConnection tn fp = do
     conn <- connectSqlite3 fp
