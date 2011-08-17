@@ -8,7 +8,6 @@ import PFEG.BinaryMagic
 import System.Environment (getArgs)
 
 import Database.HDBC
-import Database.HDBC.Sqlite3
 
 import Data.ByteString (ByteString)
 
