@@ -54,7 +54,7 @@ renderSentence = unwords . map (T.unpack.fst3)
 
 recordItem :: Statement -> Item Int32 Text -> IO ()
 recordItem stmt (ctx,t) =
-    let sqlvals = recordContextValues (encodeContext ctx) t
+    let sqlvals = recordContextValues (encode6Context ctx) t
     in  execute stmt sqlvals >> return ()
 
 targets' :: [Text]
