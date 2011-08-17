@@ -1,0 +1,56 @@
+* Data Format
+
+  This section describes the data format and matching algorithm, which are at
+  the heart of the project.
+
+** Recording
+   The current data format facilitates incremental matching.
+   Given a text [a,b,c,t,d,e,f], where t is the target FE, and a…f are its
+   surrounding tokens, the database format records the context in symmetric
+   ordered pairs, making three to four entries per item:
+
+   - cT: c3=P(〈a,f〉) c2=P(〈b,e〉) c1=P(〈c,d〉) T count id
+   - cL: c3=L(〈a,f〉) c2=L(〈b,e〉) c1=L(〈c,d〉) T count id ref-cT
+   - cC: c3=C(〈a,f〉) c2=C(〈b,e〉) c1=C(〈c,d〉) T count    ref-cL
+   - cS: c3=S(〈a,f〉) c2=S(〈b,e〉) c1=S(〈c,d〉) T count    ref-cL
+
+   In order to reduce insertion and lookup times, we make 4 different tables
+   for these different kinds of entries. P extracts the pos tags, L the lemmas,
+   S the surface forms and C the surface forms with CARD and NNP tags
+   substituted.
+
+   Uniqueness constrains are imposed as follows: UNIQUE(c3,c2,c1,T,ref-*)
+
+   The corresponding sqlite3 statements are as follows:
+
+   create table cP (id integer primary key autoincrement,
+     c3 blob, c2 blob, c1 blob, T text, count integer, UNIQUE(c3,c2,c1,T));
+   create table cL (id integer primary key autoincrement, c3 blob, c2 blob,
+     c1 blob, T text, count integer, refcT integer, UNIQUE(c3,c2,c1,T,refcT));
+   create table cC (c3 blob, c2 blob, c1 blob, T text, count integer,
+     refcL integer, UNIQUE(c3,c2,c1,T,refcL));
+   create table cS (c3 blob, c2 blob, c1 blob, T text, count integer,
+     refcL integer, UNIQUE(c3,c2,c1,T,refcL));
+
+   c3,c2,c1 are stored in the database as a binary blob, using the following
+   function to transform a pair of tokens into a unique per-pair identifier:
+
+   mkC a b = concatBytes24 [(getID a),(getID b)]
+
+   getID retrieves the unigram id, and transforms it into a 24-bit integer.  The
+   two 3-byte results are then concatenated into a 6-byte string. The inverse
+   function unC splits 6 bytes into two 3-byte strings and looks up the
+   corresponding integer indices in the unigram index. Technically speaking, the
+   format of C in the three tables isn't (a,b), where a and b are strings, but
+   instead just one 6-byte string. The majority of tokens in the DEWAC corpus
+   occupy more than 3 bytes (the notable exceptions are punctuation marks and
+   most functional elements.)
+
+   This way, we can save some space in the context database, which is unusually
+   big. T is stored as a plain text string.
+
+** Matching 
+   The matching algorithm progresses inward, opposite to the recording routine.
+   Given a query item [a,b,c,?,d,e,f], a…f again denoting context.
+
+** Remarks
