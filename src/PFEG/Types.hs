@@ -3,12 +3,8 @@ module PFEG.Types
     , Word
     , Sentence
     , Configuration(..)
-    , Context(..)
-    , TextContext
-    , IdxContext
     , Table
     , TableAccess(..)
-    , Item(..)
     ) where
 
 import Data.Int
@@ -30,14 +26,4 @@ data Configuration = Config { lemmaTable   :: String
                             , unigramTable :: String
                             , targets      :: [String] }
 
-type TextContext = Context S.ByteString
-type IdxContext  = Context Int32
-
 type Table = String
-
-data Context a = Context3 a a a a a a
-               | Context2   a a a a
-               | Context1     a a
-               deriving (Show)
-
-type Item a i = (Context a,i)
