@@ -7,15 +7,16 @@ import Data.Int
 import PFEG.Types
 import PFEG.Context
 
--- | Encode a @Bracket Int32@ item into a @ByteString@ of 24 byte length. Note
+-- | Encode a @Bracket Int32@ item into a @ByteString@ of 6 byte length. Note
 -- that, while we use @Int32@ the integer should actually be maximally 24 bytes
--- long, but Haskell doesn't have an @Int24@ type. The output is a 6 byte
--- string, consisting of 2 3-byte Int24 values. The high byte of the ingoing
--- @Int32@ gets truncated
+-- long, but Haskell doesn't have an @Int24@ type. The output consists of two
+-- 3-byte Int24 values. The high byte of the ingoing @Int32@ gets truncated.
 
 encodePair :: Bracket Int32 -> L.ByteString
 encodePair (Bracket (a,b)) = L.concat [encode' a, encode' b]
     where encode' = L.tail.encode
+
+-- | Inverse function of @encodePair@
 
 decodePair :: L.ByteString -> Bracket Int32
 decodePair bs | L.length bs /= 6 = error $ 
