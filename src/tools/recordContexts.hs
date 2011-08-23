@@ -77,18 +77,6 @@ lookupIndex stmt t =
            Just [sqlval] -> return $ fromSql sqlval
            _ -> error $ '\'':T.unpack t ++ "' did not yield an index."
 
-fst3 :: (a,b,c) -> a
-fst3    (a,_,_) =  a
-{-# INLINE fst3 #-}
-
-snd3 :: (a,b,c) -> b
-snd3    (_,b,_) =  b
-{-# INLINE snd3 #-}
-
-trd3 :: (a,b,c) -> c
-trd3    (_,_,c) =  c
-{-# INLINE trd3 #-}
-
 getItem :: Sentence Text -> Int -> Item (Word Text) Text
 getItem s i = let indices = [i-3..i+3] -- ^ full context window around target index
               in makeContext $ map (mw2w.(s `atMay`)) indices
