@@ -4,7 +4,7 @@ import Database.HDBC
 import PFEG.Types
 import PFEG.Common
 
-import Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy as L
 import Data.Text (Text)
 
 -- | Create a @TableAccess@ data structure from a @String@, denotating the table
