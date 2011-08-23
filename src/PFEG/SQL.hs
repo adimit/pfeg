@@ -7,6 +7,13 @@ import PFEG.Common
 import Data.ByteString.Lazy as L
 import Data.Text (Text)
 
+-- | Create a @TableAccess@ data structure from a @String@, denotating the table
+-- name within the db file, and a @FilePath@ for the db file
+establishConnection :: String -> FilePath -> IO TableAccess
+establishConnection tn fp = do
+    conn <- connectSqlite3 fp
+    return $ Access { connection = conn , table = tn }
+
 lookupIndexSQL :: TableAccess -> IO Statement
 lookupIndexSQL acc =
     prepare (connection acc)

@@ -10,8 +10,6 @@ module PFEG.Common
       -- * Attoparsec parsers for the TT-style corpora
     , wordP
     , sentenceP
-      -- * SQL Utility functions
-    , establishConnection
       -- * Triplet operations (useful for @Word@
     , fst3
     , snd3
@@ -69,13 +67,6 @@ c28 = fromIntegral.fromEnum
 nl8, tab8 :: Word8
 nl8  = c28 $! '\n'
 tab8 = c28 $! '\t'
-
--- | Create a @TableAccess@ data structure from a @String@, denotating the table
--- name within the db file, and a @FilePath@ for the db file
-establishConnection :: String -> FilePath -> IO TableAccess
-establishConnection tn fp = do
-    conn <- connectSqlite3 fp
-    return $ Access { connection = conn , table = tn }
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a
