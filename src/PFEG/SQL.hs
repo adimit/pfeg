@@ -1,10 +1,24 @@
-module PFEG.SQL where
+module PFEG.SQL
+    ( -- * Utility SQLite3 function
+      establishConnection 
+      -- * Wrappers around SQL Statements
+    , lookupIndexSQL
+    , Statements(..)
+    , getcPStatements
+    , getc'Statements
+      -- * Marshalling PFEG types to/from SQL values
+    , context2SQL
+    ) where
 
 import Database.HDBC
+import Database.HDBC.Sqlite3
+
 import PFEG.Types
+import PFEG.Context
 import PFEG.Common
 
 import qualified Data.ByteString.Lazy as L
+import Data.List (intercalate)
 import Data.Text (Text)
 
 -- | Create a @TableAccess@ data structure from a @String@, denotating the table
@@ -19,14 +33,42 @@ lookupIndexSQL acc =
     prepare (connection acc)
             ("SELECT id FROM " ++ table acc ++ " WHERE form == ?")
 
-recordContextSQL :: TableAccess -> IO Statement
-recordContextSQL acc =
-    prepare (connection acc)
-            ("INSERT OR REPLACE INTO "++ contextTable standardConfig
-            ++" (context,target,count) VALUES (?,?,COALESCE((SELECT count FROM "
-            ++ contextTable standardConfig
-            ++" WHERE context == ? AND target == ?)+1,1))")
+lookupIDStmtString  tn = "SELECT id FROM " ++ tn ++
+    " WHERE            T==? AND c1==? AND c2==? AND c3==?"
+lookupIDStmtString' tn = "SELECT id FROM " ++ tn ++
+    " WHERE ref==? AND T==? AND c1==? AND c2==? AND c3==?"
+updateStmtString  tn = "UPDATE " ++ tn ++ " SET count=count+1 " ++
+    " WHERE            T==? AND c1==? AND c2==? AND c3==?"
+updateStmtString' tn = "UPDATE " ++ tn ++ " SET count=count+1 " ++
+    " WHERE ref==? AND T==? AND c1==? AND c2==? AND c3==?"
+insertStmtString  tn = "INSERT INTO " ++ tn ++ " (    T,c1,c2,c3) VALUES (  ?,?,?,?)"
+insertStmtString' tn = "INSERT INTO " ++ tn ++ " (ref,T,c1,c2,c3) VALUES (?,?,?,?,?)"
 
-recordContextValues :: L.ByteString -> Text -> [SqlValue]
-recordContextValues context target =
-    let x = [toSql context, toSql target] in x++x
+data Statements = Statements { insertStatement :: Statement
+                             , updateStatement :: Statement
+                             , lookupStatement :: Statement }
+
+getcPStatements :: TableAccess -> IO Statements
+getcPStatements acc = do
+    ins <- prepare (connection acc)
+                   (insertStmtString $ table acc)
+    lup <- prepare (connection acc)
+                   (lookupIDStmtString $ table acc)
+    upd <- prepare (connection acc)
+                   (updateStmtString $ table acc)
+    return $ Statements ins upd lup
+
+getc'Statements :: TableAccess -> IO Statements
+getc'Statements acc = do
+    ins <- prepare (connection acc)
+                   (insertStmtString' $ table acc)
+    lup <- prepare (connection acc)
+                   (lookupIDStmtString' $ table acc)
+    upd <- prepare (connection acc)
+                   (updateStmtString' $ table acc)
+    return $ Statements ins upd lup
+
+context2SQL :: Context L.ByteString -> Target -> [SqlValue]
+context2SQL (Context3 a b c) t = toSql t:map toSql [a,b,c]
+context2SQL (Context2 a b  ) t = toSql t:map toSql [a,b  ]
+context2SQL (Context1 a    ) t = toSql t:   [toSql  a]
