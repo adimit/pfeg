@@ -5,6 +5,8 @@ module PFEG.Types
     , Configuration(..)
     , Table
     , TableAccess(..)
+    , Target
+    , ID
     ) where
 
 import Data.Int
@@ -13,6 +15,7 @@ import qualified Data.Text as X
 import qualified Data.HashMap.Strict as T
 import Database.HDBC
 import Database.HDBC.Sqlite3
+import Data.Text (Text)
 
 data TableAccess = Access { connection :: Connection, table :: Table }
 
@@ -27,3 +30,6 @@ data Configuration = Config { lemmaTable   :: String
                             , targets      :: [String] }
 
 type Table = String
+
+type ID = Int -- SQL row IDs
+type Target = Text
