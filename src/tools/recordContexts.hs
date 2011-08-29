@@ -1,19 +1,24 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
 import PFEG.Types
 import PFEG.Common
 import PFEG.SQL
-import PFEG.BinaryMagic
+import qualified PFEG.BinaryMagic as Magic
+import PFEG.Context
+
 import System.Environment (getArgs)
 
 import Database.HDBC
+import Database.HDBC.Sqlite3
 
 import Data.ByteString (ByteString)
 
 import Data.Iteratee.IO
 import qualified Data.Iteratee as I
-import Data.Iteratee.Parallel as IP
+
+import qualified Data.ByteString.Lazy as L
+import Data.Time.Clock
 
 import Data.Attoparsec.Iteratee
 
@@ -22,85 +27,140 @@ import Data.Text (Text)
 
 import Data.List (findIndices)
 
+import Data.Maybe (fromMaybe)
+
 import Data.Int (Int32)
 
-import Control.Monad ((>=>))
+import Control.Monad (forever,void,when,(>=>))
 import Safe (atMay)
+
+import Data.Functor ((<$>))
+
+import Control.Monad.Trans.Class (lift)
+import Control.Concurrent.MVar
+import Control.Concurrent
+import Data.Iteratee.Base
 
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
-{-# INLINE corpusI #-}
 
-recordAndLogI' :: Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
-recordAndLogI' lookupS recordS = I.joinI . I.mapChunks getItems . IP.psequence_ $
-    [recordI' lookupS recordS, I.mapChunksM_ (mapM_ (putStrLn.renderItem))]
+type DBStatements = (Statements,Statements,Statements,Statements)
 
-recordI' :: Statement -> Statement -> I.Iteratee [Item Text Text] IO ()
-recordI' lookupS recordS = I.mapChunksM_ $
-    doTimed_ . mapM_ indexAndRecord >=> print.("Took " ++).show
-    where indexAndRecord = indexItem lookupS >=> recordItem recordS
+recordAndLogI :: MVar Int -> Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
+recordAndLogI logVar lupS dbSQL =
+    I.liftI $ step 0
+    where indexAndRecordM :: Item Text (Bracket Text) -> IO ()
+          indexAndRecordM = indexItem lupS >=> (recordItem dbSQL . fmap Magic.encodePair)
+          step (!noSent) (Chunk s) =
+               let c' = noSent+1
+               in lift (logVar `putMVar` c' >> (mapM_ indexAndRecordM.getItems) s)
+                    >> I.liftI (step c')
+          step _ stream = I.idone () stream
 
-renderItem :: Item Text Text -> String
-renderItem (ctx,t) = 
-    let op = T.singleton '['
-        cl = T.singleton ']'
-        l  = case ctx of (Context3 a b c d e f) -> [op,a,b,c,op,t,cl,d,e,f,cl]
-                         (Context2   b c d e  ) -> [op,  b,c,op,t,cl,d,e,  cl]
-                         (Context1     c d    ) -> [op,    c,op,t,cl,d,    cl]
-    in T.unpack.T.unwords $ l
+recordItem :: DBStatements -> Item Text L.ByteString -> IO ()
+recordItem (pSQL,lSQL,cSQL,sSQL) (Item p l c s t) = do
+    pID <- recordContext pSQL (context2SQL p t)
+    lID <- recordContext lSQL (toSql pID:context2SQL l t)
+    case c of Just c' -> recordContext_ cSQL (toSql lID:context2SQL c' t)
+              Nothing -> return () -- skip this.
+    recordContext_ sSQL (toSql lID:context2SQL s t)
 
-renderSentence :: Sentence Text -> String
-renderSentence = unwords . map (T.unpack.fst3)
+recordContext :: Statements -> [SqlValue] -> IO ID
+recordContext sql args = do
+    rownum <- execute (updateStatement sql) args
+    when (rownum == 0) (void $ execute (insertStatement sql) args)
+    sqlvals <- execute (lookupStatement sql) args >> fetchRow (lookupStatement sql)
+    case sqlvals of
+        Just [rowid] -> return $ fromSql rowid
+        Just x    -> error $ "Non-unique id; Database corrupt. "++ show x
+        Nothing   -> error $ "Insertion failed. Database corrupt. "++show args
 
-recordItem :: Statement -> Item Int32 Text -> IO ()
-recordItem stmt (ctx,t) =
-    let sqlvals = recordContextValues (encode6Context ctx) t
-    in  execute stmt sqlvals >> return ()
-
-targets' :: [Text]
-targets' = map T.pack $ targets standardConfig
-
-getItems :: Sentence Text -> [Item Text Text]
-getItems s = let indices = findIndices (\(w,_,_) -> w `elem` targets') s
-             in  concatMap (splitItem.getItem s) indices
-
-splitItem :: Item (Word Text) Text -> [Item Text Text]
-splitItem (ctx,i) = [(ctxMap fst3 ctx,i),(ctxMap snd3 ctx,i),(ctxMap trd3 ctx,i)]
-
-indexItem :: Statement -> Item Text Text -> IO (Item Int32 Text)
-indexItem stmt (ctx,i) = fmap (,i) (ctxMapM (lookupIndex stmt) ctx)
+recordContext_ :: Statements -> [SqlValue] -> IO ()
+recordContext_ sql args = do
+    rownum <- execute (updateStatement sql) args
+    when (rownum == 0) (void $ execute (insertStatement sql) args)
 
 lookupIndex :: Statement -> Text -> IO Int32
 lookupIndex stmt t =
     do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
        case sqlvals of
            Just [sqlval] -> return $ fromSql sqlval
-           _ -> error $ '\'':T.unpack t ++ "' did not yield an index."
+           _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
 
-getItem :: Sentence Text -> Int -> Item (Word Text) Text
-getItem s i = let indices = [i-3..i+3] -- ^ full context window around target index
-              in makeContext $ map (mw2w.(s `atMay`)) indices
-              where mw2w Nothing  = (nullTxt,nullTxt,nullTxt)
-                    mw2w (Just w) = w
-                    nullTxt = T.pack "NULL"
-                    makeContext (a:b:c:(t,_,_):d:e:f:[]) = (Context3 a b c d e f,t)
-                    makeContext x = error $ "Invalid list: "++show x
+indexItem :: Statement -> Item Text (Bracket Text) -> IO (Item Text (Bracket Int32))
+indexItem stmt = return =<< mapMItem (indexContext stmt)
+
+indexContext :: Statement -> Context (Bracket Text) -> IO (Context (Bracket Int32))
+indexContext stmt c = return =<< mapMContext (mapMBracket $ lookupIndex stmt) c
+
+getItems :: Sentence Text -> [Item Text (Bracket Text)]
+getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
+             in  map (getItem s) target_indices
+
+getItem :: Sentence Text -> Int -> Item Text (Bracket Text)
+getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
+                  wordContext = Context3 (Bracket (a,f)) (Bracket (b,e)) (Bracket (c,d))
+                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
+                  sItem'      = fmap fst3    <$> wordContext
+                  cItem'      = fmap cardnnp <$> wordContext
+              in  Item { pItem = fmap trd3   <$> wordContext
+                       , lItem = fmap snd3   <$> wordContext
+                       , sItem = sItem'
+                       , cItem = if cItem' == sItem' then Just cItem' else Nothing
+                       , target = fst3 t }
+              where cardnnp (sfc,_,t) = if t `elem` [T.pack "CARD", T.pack "NNP"]
+                                         then t else sfc
+
+targets' :: [Text]
+targets' = map T.pack $ targets standardConfig
+
+chunk_size :: (Num a) => a
+chunk_size = 65536
+
+estimated_sentences :: (Num a) => a
+estimated_sentences = 5010000
+
+logger :: UTCTime -> MVar Int -> IO ()
+logger startTime logVar = forever log -- who wants to be forever log?
+    where log = do numSent <- takeMVar logVar
+                   currentT <- getCurrentTime
+                   let numSent'   = fromIntegral numSent
+                       difference = currentT `diffUTCTime` startTime
+                       eta        = difference / numSent' * estimated_sentences
+                       percent    = numSent' * 100 / estimated_sentences
+                   putStr $ "\rRunning for " ++ show difference
+                             ++ "; recorded " ++ show numSent
+                             ++ "sentences; ("++ show percent
+                             ++ "%) ETA: " ++ show eta
 
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs
-    unigramA <- establishConnection (unigramTable standardConfig) unigramT
-    contextA <- establishConnection (contextTable standardConfig) contextT
+    logVar <- newEmptyMVar
+    startTime <- getCurrentTime
+
+    putStrLn $ "Starting at "++show startTime
+
+    forkIO $ logger startTime logVar
+
+    putStrLn "Connecting…"
+
+    unigramA  <- establishConnection (unigramTable standardConfig) unigramT
+    contextdb <- connectSqlite3 contextT
     lookupIndexStatement         <- lookupIndexSQL unigramA
-    recordContextStatement       <- recordContextSQL contextA
-    putStrLn "Connections established!"
+    cPStmts <- getcPStatements (Access contextdb "cP")
+    cTStmts <- getcPStatements (Access contextdb "cT")
+    cSStmts <- getcPStatements (Access contextdb "cS")
+    cCStmts <- getcPStatements (Access contextdb "cC")
 
-    I.run =<< enumFile 65536 corpus (I.joinI $
-        I.convStream corpusI (recordAndLogI' lookupIndexStatement recordContextStatement))
+    putStrLn "Connections established!\nRecording…"
 
-    putStrLn "Committing…"
-    commit (connection contextA)
+    I.run =<< enumFile chunk_size corpus (I.joinI $ I.convStream corpusI
+        (recordAndLogI logVar lookupIndexStatement (cPStmts,cSStmts,cTStmts,cCStmts)))
 
-    putStrLn "Disconnecting…"
-    disconnect (connection contextA)
-    disconnect (connection unigramA)
+    putStrLn "Done.\nCommitting…"
+    doTimed_ (commit contextdb) >>= putStrLn.("Took "++).show
+
+    putStrLn "Done.\nDisconnecting…"
+    disconnect contextdb
+    disconnect $ connection unigramA
