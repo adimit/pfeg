@@ -114,10 +114,8 @@ getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
 targets' :: [Text]
 targets' = map T.pack $ targets standardConfig
 
-chunk_size :: (Num a) => a
-chunk_size = 65536
-
-estimated_sentences :: (Num a) => a
+chunk_size, estimated_sentences :: (Num a) => a
+chunk_size          = 65536
 estimated_sentences = 5010000
 
 logger :: UTCTime -> MVar Int -> IO ()
