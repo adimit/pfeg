@@ -25,11 +25,14 @@
 
    create table cP (id integer primary key autoincrement,
      c3 blob, c2 blob, c1 blob, T text, count integer, UNIQUE(c3,c2,c1,T));
-   create table cL (id integer primary key autoincrement, c3 blob, c2 blob,
-     c1 blob, T text, count integer, ref integer, UNIQUE(c3,c2,c1,T,ref));
-   create table cC (c3 blob, c2 blob, c1 blob, T text, count integer,
+   create table cL (id integer primary key autoincrement,
+     c3 blob, c2 blob, c1 blob, T text, count integer,
      ref integer, UNIQUE(c3,c2,c1,T,ref));
-   create table cS (c3 blob, c2 blob, c1 blob, T text, count integer,
+   create table cC (id integer primary key autoincrement,
+     c3 blob, c2 blob, c1 blob, T text, count integer,
+     ref integer, UNIQUE(c3,c2,c1,T,ref));
+   create table cS (id integer primary key autoincrement,
+     c3 blob, c2 blob, c1 blob, T text, count integer,
      ref integer, UNIQUE(c3,c2,c1,T,ref));
 
    c3,c2,c1 are stored in the database as a binary blob, using the following
