@@ -161,9 +161,9 @@ main = do
             (\(unigramA,contextdb) ->
              do lupS <- lookupIndexSQL unigramA
                 cPStmts <- getcPStatements (Access contextdb "cP")
-                cTStmts <- getcPStatements (Access contextdb "cT")
-                cSStmts <- getcPStatements (Access contextdb "cS")
-                cCStmts <- getcPStatements (Access contextdb "cC")
+                cLStmts <- getc'Statements (Access contextdb "cL")
+                cSStmts <- getc'Statements (Access contextdb "cS")
+                cCStmts <- getc'Statements (Access contextdb "cC")
 
                 putStrLn "Connections established!\nRecording…"
 
