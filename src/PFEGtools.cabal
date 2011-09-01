@@ -34,7 +34,7 @@ Executable indexUnigrams
 
 Executable recordContexts
     Build-Depends:    bytestring, attoparsec-iteratee >= 0.3.0, HDBC, HDBC-sqlite3, iteratee >= 0.8.6.1, base, text, safe, transformers, vty
-    ghc-options:      -O2 -Wall
+    ghc-options:      -O2 -Wall -threaded -rtsopts
     Main-is:          tools/recordContexts.hs
 
 Library
