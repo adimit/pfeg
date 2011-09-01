@@ -111,9 +111,8 @@ getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
 targets' :: [Text]
 targets' = map T.pack $ targets standardConfig
 
-chunk_size, estimated_sentences :: (Num a) => a
-chunk_size          = 65536
-estimated_sentences = 5010000
+chunk_size :: (Num a) => a
+chunk_size = 65536
 
 logger :: Int -> UTCTime -> MVar Int -> IO ()
 logger etc startTime logVar = forever log -- who wants to be forever log?
@@ -127,7 +126,7 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                    putStr $ "\rRunning for " ++ show (round difference)
                              ++ "; did " ++ show numChunks
                              ++ " chunks; ("++ show (round percent)
-                             ++ "%) ETA: " ++ show (round eta)
+                             ++ "%) ETA: " ++ show (round $ eta-difference)
 
 main :: IO ()
 main = do
@@ -148,28 +147,28 @@ main = do
     --      Hide/show the cursor
     -- The cursor must be hidden, because otherwise the logging action is going to
     -- cause epileptic shock.
-    bracket (do putStrLn "Connecting…"
+    bracket (do putStr "Connecting…"
                 unigramA  <- establishConnection (unigramTable standardConfig) unigramT
                 contextdb <- connectSqlite3 contextT
                 hide_cursor term
                 return (unigramA,contextdb))
             (\(unigramA,contextdb) ->
              do show_cursor term
-                putStrLn "Disconnecting"
+                putStrLn "Disconnecting…"
                 disconnect contextdb
                 disconnect $ connection unigramA)
             (\(unigramA,contextdb) ->
              do lupS <- lookupIndexSQL unigramA
                 cPStmts <- getcPStatements (Access contextdb "cP")
                 cLStmts <- getc'Statements (Access contextdb "cL")
-                cSStmts <- getc'Statements (Access contextdb "cS")
                 cCStmts <- getc'Statements (Access contextdb "cC")
+                cSStmts <- getc'Statements (Access contextdb "cS")
 
                 putStrLn "Connections established!\nRecording…"
 
                 I.run =<< enumFile chunk_size corpus (I.sequence_
-                    [ I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cSStmts,cTStmts,cCStmts))
-                    , countChunksI logVar ])
+                    [ countChunksI logVar
+                    , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cCStmts,cSStmts))])
 
                 putStrLn "Done.\nCommitting…"
                 doTimed_ (commit contextdb) >>= putStrLn.("Took "++).show
