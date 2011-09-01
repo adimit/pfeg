@@ -1,6 +1,8 @@
 {-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
+import Prelude hiding (log)
+
 import PFEG.Types
 import PFEG.Common
 import PFEG.SQL
@@ -41,21 +43,23 @@ import Control.Concurrent.MVar
 import Control.Concurrent
 import Data.Iteratee.Base
 
+import Control.Exception (bracket)
+import Graphics.Vty.Terminal
+import System.IO (hFileSize,withFile,IOMode(ReadMode))
+
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
 
 type DBStatements = (Statements,Statements,Statements,Statements)
 
-recordAndLogI :: MVar Int -> Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
-recordAndLogI logVar lupS dbSQL =
-    I.liftI $ step 0
-    where indexAndRecordM :: Item Text (Bracket Text) -> IO ()
-          indexAndRecordM = indexItem lupS >=> (recordItem dbSQL . fmap Magic.encodePair)
-          step (!noSent) (Chunk s) =
-               let c' = noSent+1
-               in lift (logVar `putMVar` c' >> (mapM_ indexAndRecordM.getItems) s)
-                    >> I.liftI (step c')
-          step _ stream = I.idone () stream
+countChunksI :: MVar Int -> I.Iteratee ByteString IO ()
+countChunksI log = I.liftI (step 0)
+    where step (!noChunk) (Chunk _) = lift (putMVar log (noChunk+1)) >> I.liftI (step $ noChunk+1)
+          step _          stream    = I.idone ()  stream
+
+recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
+recordI lupS dbSQL = I.mapChunksM_ $
+    (mapM_ $ indexItem lupS >=> (recordItem dbSQL . fmap Magic.encodePair)).getItems
 
 recordItem :: DBStatements -> Item Text L.ByteString -> IO ()
 recordItem (pSQL,lSQL,cSQL,sSQL) (Item p l c s t) = do
@@ -118,47 +122,61 @@ chunk_size, estimated_sentences :: (Num a) => a
 chunk_size          = 65536
 estimated_sentences = 5010000
 
-logger :: UTCTime -> MVar Int -> IO ()
-logger startTime logVar = forever log -- who wants to be forever log?
-    where log = do numSent <- takeMVar logVar
+logger :: Int -> UTCTime -> MVar Int -> IO ()
+logger etc startTime logVar = forever log -- who wants to be forever log?
+    where log = do numChunks <- takeMVar logVar
                    currentT <- getCurrentTime
-                   let numSent'   = fromIntegral numSent
+                   let numChunks' = fromIntegral numChunks
+                       etc'       = fromIntegral etc
                        difference = currentT `diffUTCTime` startTime
-                       eta        = difference / numSent' * estimated_sentences
-                       percent    = numSent' * 100 / estimated_sentences
-                   putStr $ "\rRunning for " ++ show difference
-                             ++ "; recorded " ++ show numSent
-                             ++ "sentences; ("++ show percent
-                             ++ "%) ETA: " ++ show eta
-
+                       eta        = difference / numChunks' * etc'
+                       percent    = numChunks' * 100 / etc'
+                   putStr $ "\rRunning for " ++ show (round difference)
+                             ++ "; did " ++ show numChunks
+                             ++ " chunks; ("++ show (round percent)
+                             ++ "%) ETA: " ++ show (round eta)
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs
-    logVar <- newEmptyMVar
+    logVar    <- newEmptyMVar
     startTime <- getCurrentTime
+    term      <- terminal_handle
+    csize     <- withFile corpus ReadMode hFileSize
 
-    putStrLn $ "Starting at "++show startTime
+    let etc = ((fromIntegral csize) `div` chunk_size)+1 -- estimated chunk size
+    putStrLn $ "Estimated amount of chunks: " ++ show etc
 
-    forkIO $ logger startTime logVar
+    putStrLn $ "Starting at " ++ show startTime
+    void $ forkIO $ logger etc startTime logVar
 
-    putStrLn "Connecting…"
+    -- Two things are done in the opening and closing bracket: 
+    --      connect/disconnect the databases
+    --      Hide/show the cursor
+    -- The cursor must be hidden, because otherwise the logging action is going to
+    -- cause epileptic shock.
+    bracket (do putStrLn "Connecting…"
+                unigramA  <- establishConnection (unigramTable standardConfig) unigramT
+                contextdb <- connectSqlite3 contextT
+                hide_cursor term
+                return (unigramA,contextdb))
+            (\(unigramA,contextdb) ->
+             do show_cursor term
+                putStrLn "Disconnecting"
+                disconnect contextdb
+                disconnect $ connection unigramA)
+            (\(unigramA,contextdb) ->
+             do lupS <- lookupIndexSQL unigramA
+                cPStmts <- getcPStatements (Access contextdb "cP")
+                cTStmts <- getcPStatements (Access contextdb "cT")
+                cSStmts <- getcPStatements (Access contextdb "cS")
+                cCStmts <- getcPStatements (Access contextdb "cC")
 
-    unigramA  <- establishConnection (unigramTable standardConfig) unigramT
-    contextdb <- connectSqlite3 contextT
-    lookupIndexStatement         <- lookupIndexSQL unigramA
-    cPStmts <- getcPStatements (Access contextdb "cP")
-    cTStmts <- getcPStatements (Access contextdb "cT")
-    cSStmts <- getcPStatements (Access contextdb "cS")
-    cCStmts <- getcPStatements (Access contextdb "cC")
+                putStrLn "Connections established!\nRecording…"
 
-    putStrLn "Connections established!\nRecording…"
+                I.run =<< enumFile chunk_size corpus (I.sequence_
+                    [ I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cSStmts,cTStmts,cCStmts))
+                    , countChunksI logVar ])
 
-    I.run =<< enumFile chunk_size corpus (I.joinI $ I.convStream corpusI
-        (recordAndLogI logVar lookupIndexStatement (cPStmts,cSStmts,cTStmts,cCStmts)))
-
-    putStrLn "Done.\nCommitting…"
-    doTimed_ (commit contextdb) >>= putStrLn.("Took "++).show
-
-    putStrLn "Done.\nDisconnecting…"
-    disconnect contextdb
-    disconnect $ connection unigramA
+                putStrLn "Done.\nCommitting…"
+                doTimed_ (commit contextdb) >>= putStrLn.("Took "++).show
+                putStrLn "Done.")
