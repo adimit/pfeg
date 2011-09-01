@@ -6,46 +6,39 @@ import Prelude hiding (log)
 import PFEG.Types
 import PFEG.Common
 import PFEG.SQL
-import qualified PFEG.BinaryMagic as Magic
 import PFEG.Context
+import qualified PFEG.BinaryMagic as Magic -- it's a kind of magic!
 
 import System.Environment (getArgs)
+import System.IO (hFileSize,withFile,IOMode(ReadMode))
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
 import Data.ByteString (ByteString)
-
-import Data.Iteratee.IO
-import qualified Data.Iteratee as I
-
+import Data.Text (Text)
 import qualified Data.ByteString.Lazy as L
-import Data.Time.Clock
+import qualified Data.Text as T
 
 import Data.Attoparsec.Iteratee
+import Data.Iteratee.IO
+import Data.Iteratee.Base
+import qualified Data.Iteratee as I
 
-import qualified Data.Text as T
-import Data.Text (Text)
-
+import Data.Time.Clock
 import Data.List (findIndices)
-
 import Data.Maybe (fromMaybe)
-
 import Data.Int (Int32)
-
-import Control.Monad (forever,void,when,(>=>))
+import Data.Functor ((<$>))
 import Safe (atMay)
 
-import Data.Functor ((<$>))
-
+import Control.Monad (forever,void,when,(>=>))
 import Control.Monad.Trans.Class (lift)
 import Control.Concurrent.MVar
 import Control.Concurrent
-import Data.Iteratee.Base
-
 import Control.Exception (bracket)
+
 import Graphics.Vty.Terminal
-import System.IO (hFileSize,withFile,IOMode(ReadMode))
 
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
@@ -135,6 +128,7 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                              ++ "; did " ++ show numChunks
                              ++ " chunks; ("++ show (round percent)
                              ++ "%) ETA: " ++ show (round eta)
+
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs
