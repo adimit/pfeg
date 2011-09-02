@@ -177,5 +177,5 @@ main = do
                     , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cCStmts,cSStmts))])
 
                 putStrLn "Done.\nCommitting…"
-                doTimed_ (commit contextdb) >>= putStrLn.("Took "++).show
+                doTimed_ (commit contextdb) >>= putStrLn.("Took "++).renderSecs.round
                 putStrLn "Done.")
