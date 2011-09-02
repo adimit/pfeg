@@ -4,6 +4,7 @@ module PFEG.Common
       -- * Configuration
     , Configuration(..)
     , standardConfig
+    , targets'
       -- * Measuring execution times
     , doTimed
     , doTimed_
@@ -36,6 +37,9 @@ standardConfig = Config { lemmaTable   = "lemmas"
                         , unigramTable = "unigrams"
                         , targets      = [ "in" , "von" , "mit", "für", "im"
                                          , "auf", "nach", "an" , "aus", "am"] }
+
+targets' :: [Text]
+targets' = map X.pack $ targets standardConfig
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do

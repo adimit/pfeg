@@ -19,7 +19,6 @@ import Database.HDBC.Sqlite3
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.ByteString.Lazy as L
-import qualified Data.Text as T
 
 import Data.Attoparsec.Iteratee
 import Data.Iteratee.IO
@@ -27,11 +26,6 @@ import Data.Iteratee.Base
 import qualified Data.Iteratee as I
 
 import Data.Time.Clock
-import Data.List (findIndices)
-import Data.Maybe (fromMaybe)
-import Data.Int (Int32)
-import Data.Functor ((<$>))
-import Safe (atMay)
 
 import Control.Monad (forever,void,when,(>=>))
 import Control.Monad.Trans.Class (lift)
@@ -80,39 +74,6 @@ recordContext_ sql args = do
     rownum <- execute (updateStatement sql) args
     when (rownum == 0) (void $ execute (insertStatement sql) args)
 
-lookupIndex :: Statement -> Text -> IO Int32
-lookupIndex stmt t =
-    do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
-       case sqlvals of
-           Just [sqlval] -> return $ fromSql sqlval
-           _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
-
-indexItem :: Statement -> Item Text (Bracket Text) -> IO (Item Text (Bracket Int32))
-indexItem stmt = return =<< mapMItem (indexContext stmt)
-
-indexContext :: Statement -> Context (Bracket Text) -> IO (Context (Bracket Int32))
-indexContext stmt c = return =<< mapMContext (mapMBracket $ lookupIndex stmt) c
-
-getItems :: Sentence Text -> [Item Text (Bracket Text)]
-getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
-             in  map (getItem s) target_indices
-
-getItem :: Sentence Text -> Int -> Item Text (Bracket Text)
-getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
-                  wordContext = Context3 (Bracket (a,f)) (Bracket (b,e)) (Bracket (c,d))
-                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
-                  sItem'      = fmap fst3    <$> wordContext
-                  cItem'      = fmap cardnnp <$> wordContext
-              in  Item { pItem = fmap trd3   <$> wordContext
-                       , lItem = fmap snd3   <$> wordContext
-                       , sItem = sItem'
-                       , cItem = if cItem' == sItem' then Just cItem' else Nothing
-                       , target = fst3 t }
-              where cardnnp (sfc,_,t) = if t `elem` [T.pack "CARD", T.pack "NNP"]
-                                         then t else sfc
-
-targets' :: [Text]
-targets' = map T.pack $ targets standardConfig
 
 chunk_size :: (Num a) => a
 chunk_size = 65536
