@@ -34,7 +34,7 @@ import Safe (atMay)
 
 import Control.Monad (forever,void,when,(>=>))
 import Control.Monad.Trans.Class (lift)
-import Control.Concurrent.MVar
+import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
 
@@ -45,9 +45,9 @@ corpusI = parserToIteratee sentenceP
 
 type DBStatements = (Statements,Statements,Statements,Statements)
 
-countChunksI :: MVar Int -> I.Iteratee ByteString IO ()
+countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
 countChunksI log = I.liftI (step 0)
-    where step (!noChunk) (Chunk _) = lift (putMVar log (noChunk+1)) >> I.liftI (step $ noChunk+1)
+    where step (!noChunk) (Chunk _) = lift (writeChan log (noChunk+1) ) >> I.liftI (step $ noChunk+1)
           step _          stream    = I.idone ()  stream
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
@@ -114,9 +114,9 @@ targets' = map T.pack $ targets standardConfig
 chunk_size :: (Num a) => a
 chunk_size = 65536
 
-logger :: Int -> UTCTime -> MVar Int -> IO ()
+logger :: Int -> UTCTime -> Chan Int -> IO ()
 logger etc startTime logVar = forever log -- who wants to be forever log?
-    where log = do numChunks <- takeMVar logVar
+    where log = do numChunks <- readChan logVar
                    currentT <- getCurrentTime
                    let numChunks' = fromIntegral numChunks
                        etc'       = fromIntegral etc
@@ -127,11 +127,12 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                              ++ "; did " ++ show numChunks
                              ++ " chunks; ("++ show (round percent)
                              ++ "%) ETA: " ++ show (round $ eta-difference)
+                   hFlush stdout
 
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs
-    logVar    <- newEmptyMVar
+    logVar    <- newChan
     startTime <- getCurrentTime
     term      <- terminal_handle
     csize     <- withFile corpus ReadMode hFileSize
