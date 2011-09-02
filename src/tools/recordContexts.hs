@@ -11,6 +11,7 @@ import qualified PFEG.BinaryMagic as Magic -- it's a kind of magic!
 
 import System.Environment (getArgs)
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
+import System.Time.Utils
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -39,6 +40,9 @@ import Control.Concurrent
 import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
+
+import GHC.IO.Handle (hFlush)
+import GHC.IO.Handle.FD (stdout)
 
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
@@ -123,11 +127,12 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                        difference = currentT `diffUTCTime` startTime
                        eta        = difference / numChunks' * etc'
                        percent    = numChunks' * 100 / etc'
-                   putStr $ "\rRunning for " ++ show (round difference)
+                   putStr $ "\rRunning for " ++ (renderSecs' difference)
                              ++ "; did " ++ show numChunks
                              ++ " chunks; ("++ show (round percent)
-                             ++ "%) ETA: " ++ show (round $ eta-difference)
+                             ++ "%) ETA: " ++ show (renderSecs' $ eta-difference)
                    hFlush stdout
+                   where renderSecs' = renderSecs.round
 
 main :: IO ()
 main = do
