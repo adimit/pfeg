@@ -49,8 +49,9 @@ corpusI = parserToIteratee sentenceP
 
 countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
 countChunksI log = I.liftI (step 0)
-    where step (!noChunk) (Chunk _) = lift (writeChan log (noChunk+1) ) >> I.liftI (step $ noChunk+1)
-          step _          stream    = I.idone ()  stream
+    where step (!i) (Chunk _) = let i' = i+1
+                                in lift (writeChan log i') >> I.liftI (step i')
+          step _    stream    = I.idone () stream
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
