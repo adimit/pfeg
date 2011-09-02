@@ -47,8 +47,6 @@ import GHC.IO.Handle.FD (stdout)
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
 
-type DBStatements = (Statements,Statements,Statements,Statements)
-
 countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
 countChunksI log = I.liftI (step 0)
     where step (!noChunk) (Chunk _) = lift (writeChan log (noChunk+1) ) >> I.liftI (step $ noChunk+1)

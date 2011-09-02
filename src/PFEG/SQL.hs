@@ -6,6 +6,7 @@ module PFEG.SQL
     , Statements(..)
     , getcPStatements
     , getc'Statements
+    , DBStatements(..)
       -- * Marshalling PFEG types to/from SQL values
     , context2SQL
     ) where
@@ -47,6 +48,7 @@ insertStmtString' tn = "INSERT INTO " ++ tn ++ " (ref,T,c1,c2,c3) VALUES (?,?,?,
 data Statements = Statements { insertStatement :: Statement
                              , updateStatement :: Statement
                              , lookupStatement :: Statement }
+type DBStatements = (Statements,Statements,Statements,Statements)
 
 getcPStatements :: TableAccess -> IO Statements
 getcPStatements acc = do
