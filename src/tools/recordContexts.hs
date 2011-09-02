@@ -16,19 +16,15 @@ import System.Time.Utils
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
-import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.ByteString.Lazy as L
 
-import Data.Attoparsec.Iteratee
 import Data.Iteratee.IO
-import Data.Iteratee.Base
 import qualified Data.Iteratee as I
 
 import Data.Time.Clock
 
 import Control.Monad (forever,void,when,(>=>))
-import Control.Monad.Trans.Class (lift)
 import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
@@ -37,15 +33,6 @@ import Graphics.Vty.Terminal
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
-
-corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
-corpusI = parserToIteratee sentenceP
-
-countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
-countChunksI log = I.liftI (step 0)
-    where step (!i) (Chunk _) = let i' = i+1
-                                in lift (writeChan log i') >> I.liftI (step i')
-          step _    stream    = I.idone () stream
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
@@ -73,10 +60,6 @@ recordContext_ :: Statements -> [SqlValue] -> IO ()
 recordContext_ sql args = do
     rownum <- execute (updateStatement sql) args
     when (rownum == 0) (void $ execute (insertStatement sql) args)
-
-
-chunk_size :: (Num a) => a
-chunk_size = 65536
 
 logger :: Int -> UTCTime -> Chan Int -> IO ()
 logger etc startTime logVar = forever log -- who wants to be forever log?

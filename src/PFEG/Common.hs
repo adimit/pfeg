@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module PFEG.Common
     ( -- * Types
       Wordcounts
@@ -15,6 +16,11 @@ module PFEG.Common
     , fst3
     , snd3
     , trd3
+      -- * Shared iteratees
+    , countChunksI
+    , corpusI
+      -- * Constants
+    , chunk_size
     ) where
 
 import PFEG.Types
@@ -24,11 +30,22 @@ import qualified Data.Text as X
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
+import Data.ByteString (ByteString)
+import Control.Monad.Trans.Class (lift)
+import Control.Concurrent.Chan
+import Data.Attoparsec.Iteratee
+import Data.Iteratee.Base
+
+import qualified Data.Iteratee as I
+
 import Data.Attoparsec
 import Control.Applicative hiding (many)
 import Data.Word (Word8)
 
 import Database.HDBC.Sqlite3
+
+chunk_size :: (Num a) => a
+chunk_size = 65536
 
 standardConfig :: Configuration
 standardConfig = Config { lemmaTable   = "lemmas"
@@ -83,3 +100,12 @@ snd3    (_,b,_) =  b
 trd3 :: (a,b,c) -> c
 trd3    (_,_,c) =  c
 {-# INLINE trd3 #-}
+
+corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
+corpusI = parserToIteratee sentenceP
+
+countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
+countChunksI log = I.liftI (step 0)
+    where step (!i) (Chunk _) = let i' = i+1
+                                in lift (writeChan log i') >> I.liftI (step i')
+          step _    stream    = I.idone () stream
