@@ -36,9 +36,9 @@ import GHC.IO.Handle.FD (stdout)
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
-    (mapM_ $ indexItem lupS >=> (recordItem dbSQL . fmap Magic.encodePair)).getItems
+    (mapM_ $ indexItem lupS >=> (recordItem dbSQL . (fmap.fmap) Magic.encodePair)).getItems
 
-recordItem :: DBStatements -> Item Text L.ByteString -> IO ()
+recordItem :: DBStatements -> Item Text (Context L.ByteString) -> IO ()
 recordItem (pSQL,lSQL,cSQL,sSQL) (Item p l c s t) = do
     pID <- recordContext pSQL (context2SQL p t)
     lID <- recordContext lSQL (toSql pID:context2SQL l t)
