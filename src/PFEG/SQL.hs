@@ -71,6 +71,4 @@ getc'Statements acc = do
     return $ Statements ins upd lup
 
 context2SQL :: Context L.ByteString -> Target -> [SqlValue]
-context2SQL (Context3 a b c) t = toSql t:map toSql [a,b,c]
-context2SQL (Context2 a b  ) t = toSql t:map toSql [a,b  ]
-context2SQL (Context1 a    ) t = toSql t:   [toSql  a]
+context2SQL (Context (a,b,c)) t = toSql t:map toSql [a,b,c]

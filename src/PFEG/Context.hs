@@ -31,9 +31,7 @@ import Safe (atMay)
 
 newtype Bracket a = Bracket (a,a) deriving (Eq,Functor,Foldable,Traversable)
 
-data Context a = Context1 a
-               | Context2 a a
-               | Context3 a a a deriving (Eq,Functor,Foldable,Traversable)
+newtype Context a = Context (a,a,a) deriving (Eq,Functor,Foldable,Traversable)
 
 data Item i a = Item { pItem :: a
                      , lItem :: a
@@ -62,7 +60,7 @@ getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
 
 getItem :: Sentence Text -> Int -> Item Text (Context (Bracket Text))
 getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
-                  wordContext = Context3 (Bracket (a,f)) (Bracket (b,e)) (Bracket (c,d))
+                  wordContext = Context ((Bracket (a,f)),(Bracket (b,e)),(Bracket (c,d)))
                   (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
                   sItem'      = fmap fst3    <$> wordContext
                   cItem'      = fmap cardnnp <$> wordContext
