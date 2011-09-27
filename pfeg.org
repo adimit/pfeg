@@ -54,6 +54,30 @@
 
 ** Matching 
    The matching algorithm progresses inward, opposite to the recording routine.
-   Given a query item [a,b,c,?,d,e,f], a…f again denoting context.
+   Given a query item [a,b,c,d,e,f], a…f again denoting context.
 
 ** Remarks
+
+* Schedule
+** Paper [/]
+   - [ ] Literature list
+   - [ ] Find new literature: who cites tetreault, de felice etc.
+   - [ ] Transfer presentation contents to paper
+   - [ ] Graphs and statistical analysis
+   - [ ] Reproduce results for English with my method to compare to elghafariETAL2010
+*** Outline
+    * Abstract [/]
+      - [ ] Come up with a better motivation
+    * Introduction [/]
+      - [ ] Problem outline
+      - [ ] Prior work
+      - [ ] Make explicit we're using a 3-token window
+    * Method [/]
+      - [ ] Mention the baseline
+      - [ ] Measure DEWAC corpus size
+      - [ ] Illustrate the matching process (once it's finished in software)
+** Software [/]
+   - [ ] Make a concept for the matching algorigthm
+   - [ ] Write the matching algorithm
+   - [ ] Run and record the data
+   - [ ] What about dropping punctuation?
