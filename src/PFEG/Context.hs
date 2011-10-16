@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
 module PFEG.Context
     ( -- * Types
-      Bracket(..)
-    , Context(..)
+      Context(..)
     , Item(..)
       -- * Transformation functions
     , indexItem
@@ -21,7 +20,6 @@ import Database.HDBC
 
 import Data.List (findIndices)
 import Data.Maybe (fromMaybe)
-import Data.Int (Int32)
 import Data.Functor ((<$>))
 
 import Data.Traversable (Traversable)
@@ -29,46 +27,36 @@ import Data.Foldable (Foldable)
 
 import Safe (atMay)
 
-newtype Bracket a = Bracket (a,a) deriving (Eq,Functor,Foldable,Traversable)
+newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable)
 
-newtype Context a = Context (a,a,a) deriving (Eq,Functor,Foldable,Traversable)
+data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
+                     , lItem :: a -- ^ Lemma part of the item
+                     , sItem :: a -- ^ Surface part of the item
+                     , target :: i-- ^ Target functional element of the item
+                     } deriving (Functor,Foldable,Traversable)
 
-data Item i a = Item { pItem :: a
-                     , lItem :: a
-                     , cItem :: Maybe a
-                     , sItem :: a
-                     , target :: i } deriving (Functor,Foldable,Traversable)
-
-lookupIndex :: Statement -> Text -> IO Int32
+lookupIndex :: Statement -> Text -> IO Int
 lookupIndex stmt t =
     do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
        case sqlvals of
            Just [sqlval] -> return $ fromSql sqlval
            _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
 
-indexItem :: Statement ->
-            Item Text (Context (Bracket Text)) ->
-            IO (Item Text (Context (Bracket Int32)))
+indexItem :: Statement -> Item Text (Context Text) -> IO (Item Text (Context Int))
 indexItem stmt = return =<< Tr.mapM (indexContext stmt)
 
-indexContext :: Statement -> Context (Bracket Text) -> IO (Context (Bracket Int32))
-indexContext stmt c = return =<< Tr.mapM (Tr.mapM $ lookupIndex stmt) c
+indexContext :: Statement -> Context Text -> IO (Context (Int))
+indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
 
-getItems :: Sentence Text -> [Item Text (Context (Bracket Text))]
+getItems :: Sentence Text -> [Item Text (Context Text)]
 getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
              in  map (getItem s) target_indices
 
-getItem :: Sentence Text -> Int -> Item Text (Context (Bracket Text))
+getItem :: Sentence Text -> Int -> Item Text (Context Text)
 getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
-                  wordContext = Context ((Bracket (a,f)),(Bracket (b,e)),(Bracket (c,d)))
+                  wordContext = Context [a,b,c,d,e,f]
                   (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
-                  sItem'      = fmap fst3    <$> wordContext
-                  cItem'      = fmap cardnnp <$> wordContext
-              in  Item { pItem = fmap trd3   <$> wordContext
-                       , lItem = fmap snd3   <$> wordContext
-                       , sItem = sItem'
-                       , cItem = if cItem' == sItem' then Just cItem' else Nothing
+              in  Item { pItem = fmap trd3  wordContext
+                       , lItem = fmap snd3  wordContext
+                       , sItem = fmap fst3  wordContext
                        , target = fst3 t }
-              where cardnnp (sfc,_,t) = if t `elem` [T.pack "CARD", T.pack "NE"]
-                                         then t else sfc
-

@@ -7,7 +7,6 @@ import PFEG.Types
 import PFEG.Common
 import PFEG.SQL
 import PFEG.Context
-import qualified PFEG.BinaryMagic as Magic -- it's a kind of magic!
 
 import System.Environment (getArgs)
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
@@ -36,14 +35,12 @@ import GHC.IO.Handle.FD (stdout)
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
-    (mapM_ $ indexItem lupS >=> (recordItem dbSQL . (fmap.fmap) Magic.encodePair)).getItems
+    (mapM_ $ indexItem lupS >=> recordItem dbSQL).getItems
 
-recordItem :: DBStatements -> Item Text (Context L.ByteString) -> IO ()
-recordItem (pSQL,lSQL,cSQL,sSQL) (Item p l c s t) = do
+recordItem :: DBStatements -> Item Text (Context Int) -> IO ()
+recordItem (pSQL,lSQL,sSQL) (Item p l s t) = do
     pID <- recordContext pSQL (context2SQL p t)
     lID <- recordContext lSQL (toSql pID:context2SQL l t)
-    case c of Just c' -> recordContext_ cSQL (toSql lID:context2SQL c' t)
-              Nothing -> return () -- skip this.
     recordContext_ sSQL (toSql lID:context2SQL s t)
 
 recordContext :: Statements -> [SqlValue] -> IO ID
@@ -110,14 +107,13 @@ main = do
              do lupS <- lookupIndexSQL unigramA
                 cPStmts <- getcPStatements (Access contextdb "cP")
                 cLStmts <- getc'Statements (Access contextdb "cL")
-                cCStmts <- getc'Statements (Access contextdb "cC")
                 cSStmts <- getc'Statements (Access contextdb "cS")
 
                 putStrLn "Connections established!\nRecording…"
 
                 I.run =<< enumFile chunk_size corpus (I.sequence_
                     [ countChunksI logVar
-                    , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cCStmts,cSStmts))])
+                    , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cSStmts))])
 
                 putStrLn "Done.\nCommitting…"
                 doTimed_ (commit contextdb) >>= putStrLn.("Took "++).renderSecs.round
