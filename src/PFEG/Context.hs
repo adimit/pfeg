@@ -69,6 +69,6 @@ getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
                        , sItem = sItem'
                        , cItem = if cItem' == sItem' then Just cItem' else Nothing
                        , target = fst3 t }
-              where cardnnp (sfc,_,t) = if t `elem` [T.pack "CARD", T.pack "NNP"]
+              where cardnnp (sfc,_,t) = if t `elem` [T.pack "CARD", T.pack "NE"]
                                          then t else sfc
 
