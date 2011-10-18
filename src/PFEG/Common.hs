@@ -129,10 +129,9 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                        difference = currentT `diffUTCTime` startTime
                        eta        = difference / numChunks' * etc'
                        percent    = numChunks' * 100 / etc'
-                   putStr $ "\rRunning for " ++ (renderSecs' difference)
+                   putStr $ "\rRunning for " ++ (renderS difference)
                              ++ "; did " ++ show numChunks
                              ++ " chunks; ("++ show (round percent)
-                             ++ "%) ETA: " ++ show (renderSecs' $ eta-difference)
+                             ++ "%) ETA: " ++ (renderS $ eta-difference) ++ "   "
                    hFlush stdout
-                   where renderSecs' = renderSecs.round
 
