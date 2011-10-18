@@ -53,7 +53,7 @@ import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
 
 chunk_size :: (Num a) => a
-chunk_size = 65536
+chunk_size = 1024^2
 
 standardConfig :: Configuration
 standardConfig = Config { lemmaTable   = "lemmas"
