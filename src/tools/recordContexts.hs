@@ -58,22 +58,6 @@ recordContext_ sql args = do
     rownum <- execute (updateStatement sql) args
     when (rownum == 0) (void $ execute (insertStatement sql) args)
 
-logger :: Int -> UTCTime -> Chan Int -> IO ()
-logger etc startTime logVar = forever log -- who wants to be forever log?
-    where log = do numChunks <- readChan logVar
-                   currentT <- getCurrentTime
-                   let numChunks' = fromIntegral numChunks
-                       etc'       = fromIntegral etc
-                       difference = currentT `diffUTCTime` startTime
-                       eta        = difference / numChunks' * etc'
-                       percent    = numChunks' * 100 / etc'
-                   putStr $ "\rRunning for " ++ (renderSecs' difference)
-                             ++ "; did " ++ show numChunks
-                             ++ " chunks; ("++ show (round percent)
-                             ++ "%) ETA: " ++ show (renderSecs' $ eta-difference)
-                   hFlush stdout
-                   where renderSecs' = renderSecs.round
-
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:_) <- getArgs

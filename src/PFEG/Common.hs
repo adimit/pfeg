@@ -6,9 +6,10 @@ module PFEG.Common
     , Configuration(..)
     , standardConfig
     , targets'
-      -- * Measuring execution times
+      -- * Measuring execution times and logging
     , doTimed
     , doTimed_
+    , logger
       -- * Attoparsec parsers for the TT-style corpora
     , wordP
     , sentenceP
@@ -32,9 +33,12 @@ import Data.Text.Encoding (decodeUtf8)
 
 import Data.ByteString (ByteString)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad (forever)
 import Control.Concurrent.Chan
 import Data.Attoparsec.Iteratee
 import Data.Iteratee.Base
+
+import System.Time.Utils (renderSecs)
 
 import qualified Data.Iteratee as I
 
@@ -43,6 +47,9 @@ import Control.Applicative hiding (many)
 import Data.Word (Word8)
 
 import Database.HDBC.Sqlite3
+
+import GHC.IO.Handle (hFlush)
+import GHC.IO.Handle.FD (stdout)
 
 chunk_size :: (Num a) => a
 chunk_size = 65536
@@ -109,3 +116,20 @@ countChunksI log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
                                 in lift (writeChan log i') >> I.liftI (step i')
           step _    stream    = I.idone () stream
+
+logger :: Int -> UTCTime -> Chan Int -> IO ()
+logger etc startTime logVar = forever log -- who wants to be forever log?
+    where log = do numChunks <- readChan logVar
+                   currentT <- getCurrentTime
+                   let numChunks' = fromIntegral numChunks
+                       etc'       = fromIntegral etc
+                       difference = currentT `diffUTCTime` startTime
+                       eta        = difference / numChunks' * etc'
+                       percent    = numChunks' * 100 / etc'
+                   putStr $ "\rRunning for " ++ (renderSecs' difference)
+                             ++ "; did " ++ show numChunks
+                             ++ " chunks; ("++ show (round percent)
+                             ++ "%) ETA: " ++ show (renderSecs' $ eta-difference)
+                   hFlush stdout
+                   where renderSecs' = renderSecs.round
+
