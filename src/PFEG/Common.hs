@@ -9,6 +9,7 @@ module PFEG.Common
       -- * Measuring execution times and logging
     , doTimed
     , doTimed_
+    , renderS
     , logger
       -- * Attoparsec parsers for the TT-style corpora
     , wordP
@@ -72,9 +73,11 @@ doTimed f = do
     end    <- getCurrentTime
     return (result, end `diffUTCTime` start)
 
-doTimed_ :: IO a -> IO NominalDiffTime
+doTimed_ :: IO () -> IO NominalDiffTime
 doTimed_ f = fmap snd (doTimed f)
-{-# INLINE doTimed_ #-}
+
+renderS :: NominalDiffTime -> String
+renderS = renderSecs.round
 
 wordP :: Parser (Word Text)
 wordP = do surface <- takeTill (==tab8)
