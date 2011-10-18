@@ -10,3 +10,6 @@ dist
 texdir
 *.aux
 /test
+*bbl
+*blg
+*pdf
