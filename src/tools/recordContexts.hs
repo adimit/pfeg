@@ -10,28 +10,24 @@ import PFEG.Context
 
 import System.Environment (getArgs)
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
-import System.Time.Utils
+import System.Time.Utils (renderSecs)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
 import Data.Text (Text)
-import qualified Data.ByteString.Lazy as L
 
 import Data.Iteratee.IO
 import qualified Data.Iteratee as I
 
 import Data.Time.Clock
 
-import Control.Monad (forever,void,when,(>=>))
+import Control.Monad (void,when,(>=>))
 import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
-
-import GHC.IO.Handle (hFlush)
-import GHC.IO.Handle.FD (stdout)
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
