@@ -27,15 +27,15 @@ import Data.Convertible.Base (Convertible)
  -
    sqlite> .schema
    CREATE TABLE cL (id integer primary key autoincrement,
-   c1 text, c2 text, c3 text, c4 text, c5 text, c6 text,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
    T text, count integer, ref integer,
    UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
    CREATE TABLE cP (id integer primary key autoincrement,
-   c1 text, c2 text, c3 text, c4 text, c5 text, c6 text,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
    T text, count integer,
    UNIQUE(c1,c2,c3,c4,c5,c6,T));
    CREATE TABLE cS (id integer primary key autoincrement,
-   c1 text, c2 text, c3 text, c4 text, c5 text, c6 text,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
    T text, count integer, ref integer,
    UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
  -

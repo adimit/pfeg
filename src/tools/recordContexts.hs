@@ -28,11 +28,11 @@ import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
 
-recordI :: DBStatements -> I.Iteratee (Sentence Text) IO ()
-recordI dbSQL = I.mapChunksM_ $
-    mapM_ (recordItem dbSQL).getItems
+recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
+recordI lupS dbSQL = I.mapChunksM_ $
+    mapM_ (indexItem lupS >=> recordItem dbSQL).getItems
 
-recordItem :: DBStatements -> Item Text (Context Text) -> IO ()
+recordItem :: DBStatements -> Item Text (Context Int) -> IO ()
 recordItem (pSQL,lSQL,sSQL) (Item p l s t) = do
     pID <- recordContext pSQL (context2SQL p t)
     lID <- recordContext lSQL (toSql pID:context2SQL l t)
@@ -55,7 +55,7 @@ recordContext_ sql args = do
 
 main :: IO ()
 main = do
-    (contextT:corpus:_) <- getArgs
+    (unigramT:contextT:corpus:_) <- getArgs
     logVar    <- newChan
     startTime <- getCurrentTime
     term      <- terminal_handle
@@ -73,15 +73,18 @@ main = do
     -- The cursor must be hidden, because otherwise the logging action is going to
     -- cause epileptic shock.
     bracket (do putStr "Connecting…"
+                unigramA  <- establishConnection (unigramTable standardConfig) unigramT
                 contextdb <- connectSqlite3 contextT
                 hide_cursor term
-                return contextdb)
-            (\contextdb ->
+                return (unigramA,contextdb))
+            (\(unigramA,contextdb) ->
              do show_cursor term
                 putStrLn "Disconnecting…"
-                disconnect contextdb)
-            (\contextdb ->
-             do cPStmts <- getcPStatements (Access contextdb "cP")
+                disconnect contextdb
+                disconnect $ connection unigramA)
+            (\(unigramA,contextdb) ->
+             do lupS <- lookupIndexSQL unigramA
+                cPStmts <- getcPStatements (Access contextdb "cP")
                 cLStmts <- getc'Statements (Access contextdb "cL")
                 cSStmts <- getc'Statements (Access contextdb "cS")
 
@@ -89,7 +92,7 @@ main = do
 
                 I.run =<< enumFile chunk_size corpus (I.sequence_
                     [ countChunksI logVar
-                    , I.joinI $ I.convStream corpusI (recordI (cPStmts,cLStmts,cSStmts))])
+                    , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cSStmts))])
 
                 putStrLn "Done.\nCommitting…"
                 doTimed_ (commit contextdb) >>= putStrLn.("Took "++).renderSecs.round
