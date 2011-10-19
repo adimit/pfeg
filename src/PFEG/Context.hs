@@ -4,7 +4,6 @@ module PFEG.Context
       Context(..)
     , Item(..)
       -- * Transformation functions
-    , indexItem
     , getItems
     ) where
 
@@ -33,19 +32,6 @@ data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
                      , sItem :: a -- ^ Surface part of the item
                      , target :: i-- ^ Target functional element of the item
                      } deriving (Functor,Foldable,Traversable)
-
-lookupIndex :: Statement -> Text -> IO Int
-lookupIndex stmt t =
-    do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
-       case sqlvals of
-           Just [sqlval] -> return $ fromSql sqlval
-           _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
-
-indexItem :: Statement -> Item Text (Context Text) -> IO (Item Text (Context Int))
-indexItem stmt = return =<< Tr.mapM (indexContext stmt)
-
-indexContext :: Statement -> Context Text -> IO (Context Int)
-indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
 
 getItems :: Sentence Text -> [Item Text (Context Text)]
 getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
