@@ -1,4 +1,3 @@
-{-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
 import Prelude hiding (log)
@@ -31,7 +30,7 @@ import Graphics.Vty.Terminal
 
 recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
 recordI lupS dbSQL = I.mapChunksM_ $
-    (mapM_ $ indexItem lupS >=> recordItem dbSQL).getItems
+    mapM_ (indexItem lupS >=> recordItem dbSQL).getItems
 
 recordItem :: DBStatements -> Item Text (Context Int) -> IO ()
 recordItem (pSQL,lSQL,sSQL) (Item p l s t) = do
@@ -62,7 +61,7 @@ main = do
     term      <- terminal_handle
     csize     <- withFile corpus ReadMode hFileSize
 
-    let etc = ((fromIntegral csize) `div` chunk_size)+1 -- estimated chunk size
+    let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
     putStrLn $ "Estimated amount of chunks: " ++ show etc
 
     putStrLn $ "Starting at " ++ show startTime

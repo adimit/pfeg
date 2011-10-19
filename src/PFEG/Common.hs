@@ -27,7 +27,6 @@ module PFEG.Common
 
 import PFEG.Types
 import Data.Time.Clock
-import qualified Data.HashMap.Strict as T
 import qualified Data.Text as X
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
@@ -47,13 +46,13 @@ import Data.Attoparsec
 import Control.Applicative hiding (many)
 import Data.Word (Word8)
 
-import Database.HDBC.Sqlite3
+import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
 
-chunk_size :: (Num a) => a
-chunk_size = 1024^2
+chunk_size :: Int
+chunk_size = (1024 :: Int) ^ (2 :: Int)
 
 standardConfig :: Configuration
 standardConfig = Config { lemmaTable   = "lemmas"
@@ -129,9 +128,9 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                        difference = currentT `diffUTCTime` startTime
                        eta        = difference / numChunks' * etc'
                        percent    = numChunks' * 100 / etc'
-                   putStr $ "\rRunning for " ++ (renderS difference)
+                   putStr $ "\rRunning for " ++ renderS difference
                              ++ "; did " ++ show numChunks
-                             ++ " chunks; ("++ show (round percent)
-                             ++ "%) ETA: " ++ (renderS $ eta-difference) ++ "   "
+                             ++ " chunks; ("++ show (round percent :: Integer)
+                             ++ "%) ETA: " ++ renderS (eta-difference) ++ "   "
                    hFlush stdout
 

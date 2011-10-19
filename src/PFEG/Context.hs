@@ -20,7 +20,6 @@ import Database.HDBC
 
 import Data.List (findIndices)
 import Data.Maybe (fromMaybe)
-import Data.Functor ((<$>))
 
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
@@ -45,7 +44,7 @@ lookupIndex stmt t =
 indexItem :: Statement -> Item Text (Context Text) -> IO (Item Text (Context Int))
 indexItem stmt = return =<< Tr.mapM (indexContext stmt)
 
-indexContext :: Statement -> Context Text -> IO (Context (Int))
+indexContext :: Statement -> Context Text -> IO (Context Int)
 indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
 
 getItems :: Sentence Text -> [Item Text (Context Text)]

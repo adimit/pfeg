@@ -9,11 +9,8 @@ module PFEG.Types
     , ID
     ) where
 
-import Data.Int
-import qualified Data.ByteString as S
 import qualified Data.Text as X
 import qualified Data.HashMap.Strict as T
-import Database.HDBC
 import Database.HDBC.Sqlite3
 import Data.Text (Text)
 

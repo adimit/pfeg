@@ -7,7 +7,7 @@ module PFEG.SQL
     , Statements(..)
     , getcPStatements
     , getc'Statements
-    , DBStatements(..)
+    , DBStatements
       -- * Marshalling PFEG types to/from SQL values
     , context2SQL
     ) where
@@ -17,11 +17,8 @@ import Database.HDBC.Sqlite3
 
 import PFEG.Types
 import PFEG.Context
-import PFEG.Common
 
-import qualified Data.ByteString.Lazy as L
 import Data.List (intercalate,intersperse)
-import Data.Text (Text)
 
 import Data.Convertible.Base (Convertible)
 
@@ -49,7 +46,7 @@ import Data.Convertible.Base (Convertible)
 establishConnection :: String -> FilePath -> IO TableAccess
 establishConnection tn fp = do
     conn <- connectSqlite3 fp
-    return $ Access { connection = conn , table = tn }
+    return Access { connection = conn , table = tn }
 
 lookupIndexSQL :: TableAccess -> IO Statement
 lookupIndexSQL acc =
@@ -71,6 +68,8 @@ cLetters = map (('c':) . show)
 questionmarks :: [Int] -> String
 questionmarks range = intersperse ',' $ replicate (length range) '?'
 
+lookupIDStmtString, lookupIDStmtString', updateStmtString, updateStmtString',
+  insertStmtString, insertStmtString' :: [Int] -> String -> String
 lookupIDStmtString  range tn = "SELECT id FROM " ++ tn ++
     " WHERE            T==? AND " ++ cConjunction range
 lookupIDStmtString' range tn = "SELECT id FROM " ++ tn ++

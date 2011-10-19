@@ -29,8 +29,6 @@ import System.Environment (getArgs)
 
 import PFEG.Common
 
-import Prelude hiding (log)
-
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
 import System.Time.Utils (renderSecs)
 
@@ -47,14 +45,14 @@ import Control.Monad.IO.Class (liftIO)
 
 wordIter :: Statement -> Statement -> I.Iteratee ByteString IO ()
 wordIter ins upd = I.joinI $ (enumLinesBS I.><> I.filter (not.B.null)) (I.liftI step)
-    where step (Chunk bsl) = let ts = concat.map convert $ bsl
+    where step (Chunk bsl) = let ts = concatMap convert bsl
                                  mt = foldl' (\t' b -> T.insertWith (+) b 1 t') T.empty ts
                              in liftIO (mapM_ (upsert ins upd) (T.toList mt)) >> I.liftI step
           step stream      = I.idone () stream
 
 convert :: ByteString -> [X.Text]
 convert bs = case X.split (=='\t').decodeUtf8 $ bs of
-                  !(w:t:r:[]) -> (X.toCaseFold $! w):t:(X.toCaseFold r):[]
+                  !(w:t:r:[]) -> [ X.toCaseFold $! w, t, X.toCaseFold r ]
                   _           -> error $ "Wrong format bs: " ++ show bs
 
 mkUpdateStmt, mkInsertStmt :: String -> String
@@ -73,12 +71,12 @@ main = do
     startTime <- getCurrentTime
     term      <- terminal_handle
     csize     <- withFile file ReadMode hFileSize
-    let etc = ((fromIntegral csize) `div` chunk_size)+1 -- estimated chunk size
+    let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
     void $ forkIO $ logger etc startTime logVar
     bracket (do putStr "Connecting…"
                 unidb <- connectSqlite3 table
                 hide_cursor term
-                return (unidb))
+                return unidb)
             (\unidb ->
              do show_cursor term
                 putStrLn "Disconnecting…"
