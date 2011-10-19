@@ -86,6 +86,7 @@ main = do
                 updateStmt <- prepare unidb (mkUpdateStmt "unigrams")
                 I.run =<< enumFile chunk_size file (I.sequence_
                     [ countChunksI logVar, wordIter insertStmt updateStmt ])
+                upsert insertStmt updateStmt (X.pack "NULL",0)
                 putStrLn "\nDone.\nCommitting…"
                 doTimed_ (commit unidb) >>= putStrLn.("Took "++).renderSecs.round
                 putStrLn "Done.")
