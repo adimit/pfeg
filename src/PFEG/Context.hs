@@ -6,6 +6,7 @@ module PFEG.Context
       -- * Transformation functions
     , indexItem
     , getItems
+    , UnigramTable
     ) where
 
 import PFEG.Common
@@ -15,6 +16,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import qualified Data.Traversable as Tr
+import qualified Data.HashMap.Strict as M
 
 import Database.HDBC
 
@@ -26,6 +28,7 @@ import Data.Foldable (Foldable)
 
 import Safe (atMay)
 
+type UnigramTable = M.HashMap Text Int
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable)
 
 data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
@@ -34,18 +37,21 @@ data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
                      , target :: i-- ^ Target functional element of the item
                      } deriving (Functor,Foldable,Traversable)
 
-lookupIndex :: Statement -> Text -> IO Int
-lookupIndex stmt t =
-    do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
-       case sqlvals of
-           Just [sqlval] -> return $ fromSql sqlval
-           _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
+lookupIndex :: Statement -> UnigramTable -> Text -> IO Int
+lookupIndex stmt uniT t =
+    case (t `M.lookup` uniT) of
+         (Just i) -> return i
+         Nothing  -> f
+    where f = do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
+                 case sqlvals of
+                      Just [sqlval] -> return $ fromSql sqlval
+                      _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
 
-indexItem :: Statement -> Item Text (Context Text) -> IO (Item Text (Context Int))
-indexItem stmt = return =<< Tr.mapM (indexContext stmt)
+indexItem :: Statement -> UnigramTable -> Item Text (Context Text) -> IO (Item Text (Context Int))
+indexItem stmt uniT = return =<< Tr.mapM (indexContext stmt uniT)
 
-indexContext :: Statement -> Context Text -> IO (Context Int)
-indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
+indexContext :: Statement -> UnigramTable -> Context Text -> IO (Context Int)
+indexContext stmt uniT = return =<< Tr.mapM (lookupIndex stmt uniT)
 
 getItems :: Sentence Text -> [Item Text (Context Text)]
 getItems s = let target_indices = findIndices (\(w,_,_) -> w `elem` targets') s
