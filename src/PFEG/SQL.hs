@@ -25,19 +25,19 @@ import Data.Convertible.Base (Convertible)
 {-|
  - Database creation:
  -
- - sqlite> .schema
- - CREATE TABLE cL (id integer primary key autoincrement,
- - c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
- - T text, count integer, ref integer,
- - UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
- - CREATE TABLE cP (id integer primary key autoincrement,
- - c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
- - T text, count integer,
- - UNIQUE(c1,c2,c3,c4,c5,c6,T));
- - CREATE TABLE cS (id integer primary key autoincrement,
- - c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
- - T text, count integer, ref integer,
- - UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
+   sqlite> .schema
+   CREATE TABLE cL (id integer primary key autoincrement,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
+   T text, count integer, ref integer,
+   UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
+   CREATE TABLE cP (id integer primary key autoincrement,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
+   T text, count integer,
+   UNIQUE(c1,c2,c3,c4,c5,c6,T));
+   CREATE TABLE cS (id integer primary key autoincrement,
+   c1 integer, c2 integer, c3 integer, c4 integer, c5 integer, c6 integer,
+   T text, count integer, ref integer,
+   UNIQUE(c1,c2,c3,c4,c5,c6,T,ref));
  -
  -}
 
