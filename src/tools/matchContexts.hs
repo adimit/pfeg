@@ -7,7 +7,6 @@ import PFEG.Types
 import PFEG.Common
 import PFEG.SQL
 import PFEG.Context
-import qualified PFEG.BinaryMagic as Magic -- it's a kind of magic!
 
 import System.Environment (getArgs)
 import System.IO (hClose,openFile,hFileSize,withFile,IOMode(ReadMode,WriteMode))
@@ -41,7 +40,7 @@ import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
 
-import GHC.IO.Handle (hFlush)
+import GHC.IO.Handle (Handle,hFlush)
 import GHC.IO.Handle.FD (stdout)
 
 data MatchMode = POS | LEM | CRD | SFC | NIL
@@ -53,30 +52,46 @@ data Result = Correct Match Count -- ^ Found a match, and the prediction was cor
 
 matchContext :: Statement -> -- ^ SQL lookup statement for unigram indices
                DBStatements -> -- ^ SQL statements for looking up cP cL cS and cC values
-               Item Text (Context (Bracket Text)) -> -- ^ An Item to match
+               Item Text (Context Text) -> -- ^ An Item to match
                IO Result
 matchContext lup stmts i = do
-    iBS <- liftM ((fmap.fmap) Magic.encodePair) (indexItem lup i)
+    -- iBS <- liftM ((fmap.fmap) Magic.encodePair) (indexItem lup i)
     
     -- check for s1 s2 s3
     -- s2id <- check for s1 s2
     -- when s2id check for s1 s2 l3
     -- check for s1
 
-
     return undefined
+
+matchI :: Handle -> Statement -> I.Iteratee (Sentence Text) IO ()
+matchI outH lupS = I.mapChunksM_ $
+    mapM_ (indexItem lupS >=> findMatches >=> logResult outH).getItems
+
+findMatches :: Item Text (Context Int) -> IO Result
+findMatches = undefined
+
+logResult :: Handle -> Result -> IO ()
+logResult h = undefined
 
 main :: IO ()
 main = do
     (unigramT:contextT:corpus:[]) <- getArgs
+    logVar   <- newChan
 
     startTime <- getCurrentTime
     term      <- terminal_handle
     csize     <- withFile corpus ReadMode hFileSize
 
-    let logname = corpus ++ ".log"
-    logfile   <- openFile logname WriteMode
-    putStrLn $ "Logging results to "++logname
+    let outS = corpus ++ ".log"
+    outH      <- openFile outS WriteMode
+    putStrLn $ "Logging results to "++outS
+
+    let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
+    putStrLn $ "Estimated amount of chunks: " ++ show etc
+
+    putStrLn $ "Starting at " ++ show startTime
+    void $ forkIO $ logger etc startTime logVar
 
     bracket (do putStr "Connecting…"
                 unigramA  <- establishConnection (unigramTable standardConfig) unigramT
@@ -87,7 +102,11 @@ main = do
              do show_cursor term
                 putStrLn "Disconnecting…"
                 disconnect contextdb
-                hClose logfile
+                hClose outH
                 disconnect $ connection unigramA)
             (\(unigramA,contextdb) ->
-             do undefined)
+             do lupS <- lookupIndexSQL unigramA
+                I.run =<< enumFile chunk_size corpus (I.sequence_
+                    [ countChunksI logVar
+                    , I.joinI $ I.convStream corpusI (matchI outH lupS) ])
+                putStrLn "Done.")
