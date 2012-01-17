@@ -17,11 +17,6 @@ Executable ttCountTag
     Main-is:          tools/ttCountTag.hs
     ghc-options:      -O2 -Wall
 
-Executable tuba2tt
-    Build-Depends:    base, bytestring, hexpat
-    Main-is:          tools/tuba2tt.hs
-    ghc-options:      -O2 -Wall
-
 Executable unigramTable
     Build-Depends:    bytestring, base, text, iteratee, unordered-containers, HDBC, HDBC-sqlite3
     ghc-options:      -O2 -Wall
