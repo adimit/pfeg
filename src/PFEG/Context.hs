@@ -29,6 +29,7 @@ import Data.Foldable (Foldable)
 import Safe (atMay)
 
 import Codec.Digest.SHA.Monad
+import Prelude hiding (null)
 
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
 
