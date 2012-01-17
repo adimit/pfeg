@@ -32,7 +32,7 @@ data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
                      , lItem :: a -- ^ Lemma part of the item
                      , sItem :: a -- ^ Surface part of the item
                      , target :: i-- ^ Target functional element of the item
-                     } deriving (Functor,Foldable,Traversable)
+                     } deriving (Functor,Foldable,Traversable,Show)
 
 lookupIndex :: Statement -> Text -> IO Int
 lookupIndex stmt t =
