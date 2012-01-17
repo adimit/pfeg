@@ -1,6 +1,41 @@
-{-# LANGUAGE TupleSections,BangPatterns #-}
+-- {-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
+import Control.Monad.Reader
+import Control.Monad.State
+import GHC.IO.Handle (Handle)
+
+import Data.Text (Text)
+import PFEG.Context
+
+data LogState = LogState { currentItem :: Int }
+
+data Configuration = Configuration
+    { testShard :: [Int]
+    , targets   :: [Text]
+    , hashtable :: String
+    , ctxttable :: String }
+
+data MatchMode = S | P | L
+
+type SQLString = String
+type Result = [(Int,Text)] -- list of possible predictions with associated counts.
+
+match :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO Result
+match = undefined
+
+prepareSQLStatement :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO SQLString
+prepareSQLStatement = do
+    cf <- ask
+
+    return undefined
+
+logResult :: Handle -> Item Text (Context Text) -> Result -> StateT LogState IO ()
+logResult _ _ _ = undefined
+
+main :: IO ()
+main = undefined
+{-
 import Prelude hiding (log)
 
 import PFEG.Types
@@ -40,9 +75,10 @@ import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
 
-import GHC.IO.Handle (Handle,hFlush)
 import GHC.IO.Handle.FD (stdout)
+-}
 
+{-
 data MatchMode = POS | LEM | CRD | SFC | NIL
 type Match = Context MatchMode
 type Count = Int
@@ -110,3 +146,5 @@ main = do
                     [ countChunksI logVar
                     , I.joinI $ I.convStream corpusI (matchI outH lupS) ])
                 putStrLn "Done.")
+
+-}
