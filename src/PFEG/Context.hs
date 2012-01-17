@@ -55,7 +55,7 @@ getItem :: Sentence Text -> Int -> Item Text (Context Text)
 getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
                   wordContext = Context [a,b,c,d,e,f]
                   (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
-              in  Item { pItem = fmap trd3  wordContext
-                       , lItem = fmap snd3  wordContext
+              in  Item { lItem = fmap trd3  wordContext
+                       , pItem = fmap snd3  wordContext
                        , sItem = fmap fst3  wordContext
                        , target = fst3 t }
