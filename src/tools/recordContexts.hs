@@ -21,7 +21,7 @@ import qualified Data.Iteratee as I
 
 import Data.Time.Clock
 
-import Control.Monad (void,when,(>=>))
+import Control.Monad (void,when)
 import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
@@ -29,15 +29,6 @@ import Control.Exception (bracket)
 import Graphics.Vty.Terminal
 
 import Codec.Digest.SHA (hash,Length (SHA256))
-
-recordI :: Int -> Statement -> Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
-recordI i lupS updS insS = I.mapChunksM_ $
-    mapM_ (indexItem lupS >=> recordItem i updS insS).getItems
-
-recordItem :: Int -> Statement -> Statement -> Item Text (Context Int) -> IO ()
-recordItem i updS insS item = do
-    rownum <- execute updS (item2SQL i item)
-    when (rownum == 0) (void $ execute insS (item2SQL i item))
 
 recordI' :: Int -> Statement -> Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
 recordI' i insH updS insS = I.mapChunksM_ $
