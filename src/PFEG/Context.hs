@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
+{-# LANGUAGE FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
 module PFEG.Context
     ( -- * Types
       Context(..)
@@ -13,6 +13,8 @@ import PFEG.Types
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.ByteString as B
 
 import qualified Data.Traversable as Tr
 
@@ -26,7 +28,16 @@ import Data.Foldable (Foldable)
 
 import Safe (atMay)
 
-newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable)
+import Codec.Digest.SHA.Monad
+
+newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
+
+-- | Notice that this hashes *only* the contexts, not the target.
+instance Hashable (Item a (Context Text)) where
+    update (Item (Context a) (Context b) (Context c) _t) =
+    -- We intercalate a 1, so that @hash ["ab","c"] /= hash ["a","bc"]@
+           update $ B.intercalate null $ map encodeUtf8 (a++b++c)
+                where null = B.singleton 1
 
 data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
                      , lItem :: a -- ^ Lemma part of the item
