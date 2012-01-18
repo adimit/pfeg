@@ -6,7 +6,10 @@ import Control.Monad.State
 import GHC.IO.Handle (Handle)
 
 import Data.Text (Text)
+import qualified Data.Text as T
+
 import PFEG.Context
+import PFEG.Common hiding (Configuration)
 
 data LogState = LogState { currentItem :: Int }
 
@@ -16,7 +19,7 @@ data Configuration = Configuration
     , hashtable :: String
     , ctxttable :: String }
 
-data MatchMode = S | P | L
+data MatchMode = P | L | S
 
 type SQLString = String
 type Result = [(Int,Text)] -- list of possible predictions with associated counts.
@@ -25,13 +28,24 @@ match :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO Res
 match = undefined
 
 prepareSQLStatement :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO SQLString
-prepareSQLStatement = do
+prepareSQLStatement (Item (Context pI) (Context lI) (Context sI) t) mm = do
     cf <- ask
-
+    let selectString = "SELECT h FROM " ++ hashtable cf ++ " WHERE "
+        f = \c s n -> c:show n ++ " == " ++ T.unpack s
+        mmSelect P = f 'p'.fst3
+        mmSelect L = f 'l'.snd3
+        mmSelect S = f 's'.trd3
+        targets :: [Int -> String]
+        targets = zipWith ($) (mmSelect `map` mm) (zip3 pI lI sI)
     return undefined
+
 
 logResult :: Handle -> Item Text (Context Text) -> Result -> StateT LogState IO ()
 logResult _ _ _ = undefined
+
+{- SQL statement
+ -
+ -}
 
 main :: IO ()
 main = undefined
