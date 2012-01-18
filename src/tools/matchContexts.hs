@@ -1,9 +1,11 @@
 -- {-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
+import Data.List (intercalate)
 import Control.Monad.Reader
 import Control.Monad.State
 import GHC.IO.Handle (Handle)
+import Data.Maybe (catMaybes)
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -27,17 +29,18 @@ type Result = [(Int,Text)] -- list of possible predictions with associated count
 match :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO Result
 match = undefined
 
-prepareSQLStatement :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO SQLString
-prepareSQLStatement (Item (Context pI) (Context lI) (Context sI) t) mm = do
+-- | Given a list of @MatchMode@s and an item, make the appropriate SQL string
+-- to query the hash DB with.
+sqlHash :: Item Text (Context Text) -> [Maybe MatchMode] -> Reader Configuration SQLString
+sqlHash (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     cf <- ask
-    let selectString = "SELECT h FROM " ++ hashtable cf ++ " WHERE "
-        f = \c s n -> c:show n ++ " == " ++ T.unpack s
-        mmSelect P = f 'p'.fst3
-        mmSelect L = f 'l'.snd3
-        mmSelect S = f 's'.trd3
-        targets :: [Int -> String]
-        targets = zipWith ($) (mmSelect `map` mm) (zip3 pI lI sI)
-    return undefined
+    return $ "SELECT h FROM " ++ hashtable cf ++ " WHERE " ++ intercalate " AND " pattern
+    where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
+          f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
+          mmSelect (Just P) = f 'p'.fst3
+          mmSelect (Just L) = f 'l'.snd3
+          mmSelect (Just S) = f 's'.trd3
+          mmSelect Nothing  = \_ _ -> Nothing
 
 
 logResult :: Handle -> Item Text (Context Text) -> Result -> StateT LogState IO ()
