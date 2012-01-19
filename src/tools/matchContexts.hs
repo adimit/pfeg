@@ -16,10 +16,8 @@ import PFEG.Common hiding (Configuration)
 data LogState = LogState { currentItem :: Int }
 
 data Configuration = Configuration
-    { testShard :: [Int]
-    , targets   :: [Text]
-    , hashtable :: String
-    , ctxttable :: String }
+    { testShard :: Maybe Int
+    , targets   :: [Text] }
 
 data MatchMode = P | L | S
 
@@ -29,12 +27,15 @@ type Result = [(Int,Text)] -- list of possible predictions with associated count
 match :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO Result
 match = undefined
 
--- | Given a list of @MatchMode@s and an item, make the appropriate SQL string
--- to query the hash DB with.
-sqlHash :: Item Text (Context Text) -> [Maybe MatchMode] -> Reader Configuration SQLString
-sqlHash (Item (Context pI) (Context lI) (Context sI) _t) mm = do
+-- | Given a list of @MatchMode@s and an item, make the appropriate SQL string to retreive
+-- item counts per target for this particular pattern.
+sqlQuery :: Item Text (Context Text) -> [Maybe MatchMode] -> Reader Configuration SQLString
+sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     cf <- ask
-    return $ "SELECT h FROM " ++ hashtable cf ++ " WHERE " ++ intercalate " AND " pattern
+    let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
+                                            Nothing -> ""
+    return $ "SELECT t,sum(c) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
+              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t;"
     where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
           f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
           mmSelect (Just P) = f 'p'.fst3
