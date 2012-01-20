@@ -19,7 +19,7 @@ data Configuration = Configuration
     { testShard :: Maybe Int
     , targets   :: [Text] }
 
-data MatchMode = P | L | S
+data MatchMode = P | L | S deriving Show
 
 type SQLString = String
 type Result = [(Int,Text)] -- list of possible predictions with associated counts.
@@ -48,3 +48,18 @@ logResult _ _ _ = undefined
 
 main :: IO ()
 main = undefined
+
+prettyMatchMode :: [Maybe MatchMode] -> String
+prettyMatchMode = take 6.concatMap (maybe "_" show).(++ repeat Nothing)
+
+-- preliminary list of matchmodes
+matchmodes :: [[Maybe MatchMode]]
+matchmodes = [ map Just [S,S,S,S,S,S]
+             , map Just [L,L,L,L,L,L]
+             , map Just [P,P,P,P,P,P]
+             , Nothing : map Just [S,S,S,S]
+             , Nothing : map Just [L,L,L,L]
+             , Nothing : map Just [P,P,P,P]
+             , Nothing : Nothing : map Just [S,S]
+             , Nothing : Nothing : map Just [L,L]
+             , Nothing : Nothing : map Just [P,P] ]
