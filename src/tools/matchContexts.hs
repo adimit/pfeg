@@ -38,9 +38,8 @@ data LogData = LogData
     { logItem :: Item Text (Context Text)
     , logResults :: [(MatchPattern,Result)] }
 
-type SQLString = String
-type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
-
+instance Show LogData where
+    show (LogData li lr) = undefined
 matchI :: Iteratee (Sentence Text) (ReaderT Configuration IO) ()
 matchI = I.mapChunksM_ $ mapM m . getItems
     where m :: Item Text (Context Text) -> ReaderT Configuration IO ()
@@ -78,7 +77,7 @@ logResult :: Handle -> LogData -> StateT LogState IO ()
 logResult _ _ = undefined
 
 main :: IO ()
-main = undefined
+main = undefined -- (runReaderT $ I.run =<< enumFile chunk_size corpus (I.joinI $ I.convStream corpusI matchI)) cf
 
 prettyMatchMode :: [Maybe MatchMode] -> String
 prettyMatchMode = take 6.concatMap (maybe "_" show).(++ repeat Nothing)
