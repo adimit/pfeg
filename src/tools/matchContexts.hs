@@ -7,8 +7,11 @@ import Control.Monad.State
 import GHC.IO.Handle (Handle)
 import Data.Maybe (catMaybes)
 
+import Data.Iteratee.IO
 import Data.Iteratee (Iteratee)
 import qualified Data.Iteratee as I
+
+import Control.Concurrent.MVar
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -25,18 +28,25 @@ data LogState = LogState { currentItem :: Int }
 data Configuration = Configuration
     { testShard  :: Maybe Int
     , targets    :: [Text]
-    , connection :: Connection }
+    , connection :: Connection 
+    , logVar     :: MVar LogData }
 
 data MatchMode = P | L | S deriving Show
 type MatchPattern = [Maybe MatchMode]
 
-type LogData = (Item Text (Context Text), MatchPattern, Result)
+data LogData = LogData 
+    { logItem :: Item Text (Context Text)
+    , logResults :: [(MatchPattern,Result)] }
 
 type SQLString = String
 type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
 
-matchI :: Iteratee (Sentence Text) IO ()
-matchI = undefined
+matchI :: Iteratee (Sentence Text) (ReaderT Configuration IO) ()
+matchI = I.mapChunksM_ $ mapM m . getItems
+    where m :: Item Text (Context Text) -> ReaderT Configuration IO ()
+          m i = do cf <- ask
+                   results <- mapM (sqlQuery i) matchmodes >>= mapM match
+                   liftIO $ putMVar (logVar cf) (LogData i (zip matchmodes results))
 
 -- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
 -- tuples.
@@ -50,7 +60,7 @@ match s = do
 
 -- | Given a list of @MatchMode@s and an item, make the appropriate SQL string to retreive
 -- item counts per target for this particular pattern.
-sqlQuery :: Item Text (Context Text) -> [Maybe MatchMode] -> Reader Configuration SQLString
+sqlQuery :: Item Text (Context Text) -> [Maybe MatchMode] -> ReaderT Configuration IO SQLString
 sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     cf <- ask
     let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
