@@ -10,22 +10,33 @@ import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
 
+import Database.HDBC
+import Database.HDBC.Sqlite3
+
 import PFEG.Context
 import PFEG.Common hiding (Configuration)
 
 data LogState = LogState { currentItem :: Int }
 
 data Configuration = Configuration
-    { testShard :: Maybe Int
-    , targets   :: [Text] }
+    { testShard  :: Maybe Int
+    , targets    :: [Text]
+    , connection :: Connection }
 
 data MatchMode = P | L | S deriving Show
 
 type SQLString = String
-type Result = [(Int,Text)] -- list of possible predictions with associated counts.
+type Result = [(Text,Int)] -- list of possible predictions with associated counts.
 
-match :: Item Text (Context Text) -> [MatchMode] -> ReaderT Configuration IO Result
-match = undefined
+-- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
+-- tuples.
+match :: SQLString -> ReaderT Configuration IO Result
+match s = do
+    cf   <- ask
+    liftIO $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
+    where sqlToResult [] = []
+          sqlToResult ((t:c:[]):xs) = (fromSql t, fromSql c):sqlToResult xs
+          sqlToResult xs = error $ "Unexpected data format." ++ show xs
 
 -- | Given a list of @MatchMode@s and an item, make the appropriate SQL string to retreive
 -- item counts per target for this particular pattern.
