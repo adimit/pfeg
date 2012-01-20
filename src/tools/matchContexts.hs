@@ -7,6 +7,9 @@ import Control.Monad.State
 import GHC.IO.Handle (Handle)
 import Data.Maybe (catMaybes)
 
+import Data.Iteratee (Iteratee)
+import qualified Data.Iteratee as I
+
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -28,6 +31,9 @@ data MatchMode = P | L | S deriving Show
 type SQLString = String
 type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
 
+
+matchI :: Iteratee (Sentence Text) IO ()
+matchI = undefined
 -- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
 -- tuples.
 match :: SQLString -> ReaderT Configuration IO Result
