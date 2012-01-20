@@ -40,6 +40,10 @@ data LogData = LogData
 
 instance Show LogData where
     show (LogData li lr) = undefined
+
+type SQLString = String
+type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
+
 matchI :: Iteratee (Sentence Text) (ReaderT Configuration IO) ()
 matchI = I.mapChunksM_ $ mapM m . getItems
     where m :: Item Text (Context Text) -> ReaderT Configuration IO ()
