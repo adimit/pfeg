@@ -35,7 +35,7 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
                                             Nothing -> ""
     return $ "SELECT t,sum(c) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
-              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t;"
+              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY c DESC"
     where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
           f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
           mmSelect (Just P) = f 'p'.fst3
