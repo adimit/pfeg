@@ -16,6 +16,7 @@ import qualified Data.Text as T
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
+import PFEG.Types hiding (Configuration,connection)
 import PFEG.Context
 import PFEG.Common hiding (Configuration)
 
@@ -27,13 +28,16 @@ data Configuration = Configuration
     , connection :: Connection }
 
 data MatchMode = P | L | S deriving Show
+type MatchPattern = [Maybe MatchMode]
+
+type LogData = (Item Text (Context Text), MatchPattern, Result)
 
 type SQLString = String
 type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
 
-
 matchI :: Iteratee (Sentence Text) IO ()
 matchI = undefined
+
 -- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
 -- tuples.
 match :: SQLString -> ReaderT Configuration IO Result
@@ -60,8 +64,8 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
           mmSelect (Just S) = f 's'.trd3
           mmSelect Nothing  = \_ _ -> Nothing
 
-logResult :: Handle -> Item Text (Context Text) -> Result -> StateT LogState IO ()
-logResult _ _ _ = undefined
+logResult :: Handle -> LogData -> StateT LogState IO ()
+logResult _ _ = undefined
 
 main :: IO ()
 main = undefined
