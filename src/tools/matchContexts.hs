@@ -26,7 +26,7 @@ data Configuration = Configuration
 data MatchMode = P | L | S deriving Show
 
 type SQLString = String
-type Result = [(Text,Int)] -- list of possible predictions with associated counts.
+type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
 
 -- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
 -- tuples.
@@ -35,7 +35,7 @@ match s = do
     cf   <- ask
     liftIO $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
     where sqlToResult [] = []
-          sqlToResult ((t:c:[]):xs) = (fromSql t, fromSql c):sqlToResult xs
+          sqlToResult ((t:c:h:[]):xs) = (fromSql t, fromSql c, fromSql h):sqlToResult xs
           sqlToResult xs = error $ "Unexpected data format." ++ show xs
 
 -- | Given a list of @MatchMode@s and an item, make the appropriate SQL string to retreive
@@ -45,7 +45,7 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     cf <- ask
     let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
                                             Nothing -> ""
-    return $ "SELECT t,sum(c) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
+    return $ "SELECT t,sum(c),count(DISTINCT hash.h) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
               excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY c DESC"
     where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
           f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
