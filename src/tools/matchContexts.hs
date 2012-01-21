@@ -7,6 +7,9 @@ import Control.Monad.State
 import GHC.IO.Handle (Handle)
 import Data.Maybe (catMaybes)
 
+import System.IO (hPutStrLn)
+import System.Time.Utils (renderSecs)
+
 import Data.Iteratee.IO
 import Data.Iteratee (Iteratee)
 import qualified Data.Iteratee as I
@@ -28,8 +31,9 @@ data LogState = LogState { currentItem :: Int }
 data Configuration = Configuration
     { testShard  :: Maybe Int
     , targets    :: [Text]
-    , connection :: Connection 
-    , logVar     :: MVar LogData }
+    , connection :: Connection
+    , logVar     :: MVar LogData
+    , sqlLogH    :: Handle }
 
 data MatchMode = P | L | S deriving Show
 type MatchPattern = [Maybe MatchMode]
@@ -56,7 +60,9 @@ matchI = I.mapChunksM_ $ mapM m . getItems
 match :: SQLString -> ReaderT Configuration IO Result
 match s = do
     cf   <- ask
-    liftIO $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
+    (result,time) <- liftIO.doTimed $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
+    liftIO $ hPutStrLn (sqlLogH cf) ((renderSecs.round $ time) ++ " | " ++ s)
+    return result
     where sqlToResult [] = []
           sqlToResult ((t:c:h:[]):xs) = (fromSql t, fromSql c, fromSql h):sqlToResult xs
           sqlToResult xs = error $ "Unexpected data format." ++ show xs
