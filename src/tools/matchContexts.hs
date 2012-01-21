@@ -50,7 +50,8 @@ data LogData = LogData
     , logResults :: [(MatchPattern,Result)] }
 
 instance Show LogData where
-    show (LogData li lr) = undefined
+    show (LogData (Item _ _ (Context s) t) lr) = intercalate " | " (map T.unpack s) ++ "\nActual: " ++ T.unpack t
+        ++ "\n" ++ concatMap (\(mm,r) -> prettyMatchMode mm ++ ": " ++ show r ++ "\n") lr
 
 type SQLString = String
 type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
