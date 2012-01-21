@@ -81,8 +81,8 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     cf <- ask
     let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
                                             Nothing -> ""
-    return $ "SELECT t,sum(c),count(DISTINCT hash.h) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
-              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY c DESC"
+    return $ "SELECT t,sum(c) AS sums,count(DISTINCT hash.h) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
+              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY sums DESC"
     where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
           f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
           mmSelect (Just P) = f 'p'.fst3
