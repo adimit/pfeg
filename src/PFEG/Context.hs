@@ -60,7 +60,7 @@ indexContext :: Statement -> Context Text -> IO (Context Int)
 indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
 
 getItems :: Sentence Text -> [Item Text (Context Text)]
-getItems s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s
+getItems s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s -- punctuation is tagged starting with $.
                  target_indices = findIndices (\(w,_,_) -> w `elem` targets') s_no_punct
              in  map (getItem s_no_punct) target_indices
 
