@@ -40,6 +40,7 @@ recordI' i insH updS insS = I.mapChunksM_ $
               when (rownum == 0) (do
                   void $ execute insS [toSql h,toSql i, toSql t]
                   void $ execute insH $ toSql h:contexts2SQL item)
+
 main :: IO ()
 main = do
     (contextT:corpus:shard:_) <- getArgs
