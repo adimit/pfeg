@@ -49,6 +49,7 @@ data LogData = LogData
     { logItem :: Item Text (Context Text)
     , logResults :: [(MatchPattern,Result)] }
 
+-- FIXME: this needs a pretty printer
 instance Show LogData where
     show (LogData (Item _ _ (Context s) t) lr) = intercalate " | " (map T.unpack s) ++ "\nActual: " ++ T.unpack t
         ++ "\n" ++ concatMap (\(mm,r) -> prettyMatchMode mm ++ ": " ++ show r ++ "\n") lr
