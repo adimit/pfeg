@@ -1,6 +1,8 @@
 -- {-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
+import Prelude hiding (log)
+
 import Data.Time.Clock
 import Data.List (intercalate)
 import Control.Monad.Reader
@@ -9,7 +11,7 @@ import GHC.IO.Handle (Handle)
 import Data.Maybe (catMaybes)
 
 import System.Environment (getArgs)
-import System.IO (hPutStrLn,IOMode(ReadMode,AppendMode),hFileSize,withFile,openFile,hClose)
+import System.IO (hPutStr,hPutStrLn,IOMode(ReadMode,AppendMode),hFileSize,withFile,openFile,hClose)
 import System.Time.Utils (renderSecs)
 
 import Data.Iteratee.IO
@@ -92,8 +94,11 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
           mmSelect (Just S) = f 's'.trd3
           mmSelect Nothing  = \_ _ -> Nothing
 
-logResult :: Handle -> LogData -> StateT LogState IO ()
-logResult _ _ = undefined
+logResult :: Handle -> MVar LogData -> StateT LogState IO ()
+logResult h resV = forever log
+    where log = do (LogState n) <- get
+                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show
+                   put (LogState $ n+1)
 
 main :: IO ()
 main = do
@@ -126,6 +131,7 @@ main = do
                          , logVar = resultV
                          , sqlLogH = sqlLogH'
                          , resultH = resultH' }
+                void $ forkIO (void $ runStateT (logResult resultH' resultV) (LogState 1))
                 (runReaderT $ I.run =<< enumFile chunk_size corpus (I.joinI $ I.convStream corpusI matchI)) cf)
 
 prettyMatchMode :: [Maybe MatchMode] -> String
