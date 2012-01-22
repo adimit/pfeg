@@ -98,11 +98,11 @@ logResult _ _ = undefined
 main :: IO ()
 main = do
     (contextT:corpus:shard:_) <- getArgs
-    statusV <- newChan
-    resultV <- newEmptyMVar
+    statusV   <- newChan
+    resultV   <- newEmptyMVar
     startTime <- getCurrentTime
-    term <- terminal_handle
-    csize <- withFile corpus ReadMode hFileSize
+    term      <- terminal_handle
+    csize     <- withFile corpus ReadMode hFileSize
 
     let etc = (fromIntegral csize `div` chunk_size)+1
     putStrLn $ "Estimated amount of chunks " ++ show etc
