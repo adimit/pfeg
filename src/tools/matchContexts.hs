@@ -88,7 +88,7 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
     return $ "SELECT t,sum(c) AS sums,count(DISTINCT hash.h) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
               excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY sums DESC"
     where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
-          f c s n           = Just $ c:show n ++ " == " ++ T.unpack s
+          f c s n           = Just $ c:show n ++ " =='" ++ T.unpack s ++ "'"
           mmSelect (Just P) = f 'p'.fst3
           mmSelect (Just L) = f 'l'.snd3
           mmSelect (Just S) = f 's'.trd3
