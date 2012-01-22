@@ -11,7 +11,7 @@ import GHC.IO.Handle (Handle)
 import Data.Maybe (catMaybes)
 
 import System.Environment (getArgs)
-import System.IO (hPutStr,hPutStrLn,IOMode(ReadMode,AppendMode),hFileSize,withFile,openFile,hClose)
+import System.IO (hPutStr,hPutStrLn,IOMode(ReadMode,AppendMode),hFileSize,withFile,openFile,hClose,hFlush)
 import System.Time.Utils (renderSecs)
 
 import Data.Iteratee.IO
@@ -72,7 +72,7 @@ match :: SQLString -> ReaderT Configuration IO Result
 match s = do
     cf   <- ask
     (result,time) <- liftIO.doTimed $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
-    liftIO $ hPutStrLn (sqlLogH cf) ((renderSecs.round $ time) ++ " | " ++ s)
+    liftIO $ hPutStrLn (sqlLogH cf) ((renderSecs.round $ time) ++ " | " ++ s) >> hFlush (sqlLogH cf)
     return result
     where sqlToResult [] = []
           sqlToResult ((t:c:h:[]):xs) = (fromSql t, fromSql c, fromSql h):sqlToResult xs
@@ -97,7 +97,7 @@ sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
 logResult :: Handle -> MVar LogData -> StateT LogState IO ()
 logResult h resV = forever log
     where log = do (LogState n) <- get
-                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show
+                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show >> hFlush h
                    put (LogState $ n+1)
 
 main :: IO ()
