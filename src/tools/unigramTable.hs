@@ -1,10 +1,7 @@
-{-# LANGUAGE BangPatterns #-}
 module Main where
 
 import qualified Data.ByteString.Char8 as B
 import Data.ByteString (ByteString)
-
-import Data.List (foldl')
 
 import qualified Data.Text as X
 import Data.Text.Encoding (decodeUtf8)
@@ -13,8 +10,6 @@ import Data.Iteratee.Char
 import Data.Iteratee.Base
 import Data.Iteratee.IO
 import qualified Data.Iteratee as I
-
-import qualified Data.HashMap.Strict as T
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -34,35 +29,30 @@ import System.Time.Utils (renderSecs)
 
 import Data.Time.Clock
 
-import Control.Monad (when,void)
+import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
 
 {-
  - .schema
- - CREATE TABLE unigrams (id integer primary key autoincrement,
- - form text, count int, UNIQUE(form));
+ - CREATE TABLE unigrams (id integer primary key autoincrement, f text, UNIQUE(f));
  -}
 
-wordIter :: Statement -> Statement -> I.Iteratee ByteString IO ()
-wordIter ins upd = I.joinI $ (enumLinesBS I.><> I.filter (not.B.null)) (I.liftI step)
+wordI :: Statement -> I.Iteratee ByteString IO ()
+wordI insS = I.joinI $ (enumLinesBS I.><> I.filter (not.B.null)) (I.liftI step)
     where step (Chunk bsl) = let ts = concatMap convert bsl
-                                 mt = foldl' (\t' b -> T.insertWith (+) b 1 t') T.empty ts
-                             in liftIO (mapM_ (upsert ins upd) (T.toList mt)) >> I.liftI step
+                             in liftIO $ mapM_ (insert insS) ts
           step stream      = I.idone () stream
 
 convert :: ByteString -> [X.Text]
 convert bs = case X.split (=='\t').decodeUtf8 $ bs of
-                  !(w:t:r:[]) -> [ X.toCaseFold $! w, t, X.toCaseFold r ]
+                  (w:t:r:[]) -> [ X.toCaseFold $! w, t, X.toCaseFold r ]
                   _           -> error $ "Wrong format bs: " ++ show bs
 
-mkUpdateStmt, mkInsertStmt :: String -> String
-mkUpdateStmt tn = "UPDATE " ++ tn ++ " SET count=count+? " ++ " WHERE form==? "
-mkInsertStmt tn = "INSERT INTO " ++ tn ++ " (count,form) " ++ " VALUES (?,?) "
+mkInsertStmt :: String -> String
+mkInsertStmt tn = "INSERT OR IGNORE INTO " ++ tn ++ " (f) " ++ " VALUES (?) "
 
-upsert :: Statement -> Statement -> (X.Text, Int) -> IO ()
-upsert insert update (t,c) = do
-    rownum <- execute update [toSql c,toSql t]
-    when (rownum == 0) (void $ execute insert [toSql c, toSql t])
+insert :: Statement -> X.Text -> IO ()
+insert insS t = void $ execute insS [toSql t]
 
 main :: IO ()
 main = do
@@ -83,10 +73,9 @@ main = do
                 disconnect unidb)
             (\unidb ->
              do insertStmt <- prepare unidb (mkInsertStmt "unigrams")
-                updateStmt <- prepare unidb (mkUpdateStmt "unigrams")
+                insert insertStmt (X.pack "NULL")
                 I.run =<< enumFile chunk_size file (I.sequence_
-                    [ countChunksI logVar, wordIter insertStmt updateStmt ])
-                upsert insertStmt updateStmt (X.pack "NULL",0)
+                    [ countChunksI logVar, wordI insertStmt ])
                 putStrLn "\nDone.\nCommitting…"
                 doTimed_ (commit unidb) >>= putStrLn.("Took "++).renderSecs.round
                 putStrLn "Done.")
