@@ -146,7 +146,9 @@ recordI :: Statement -> Statement -> Statement -> Iteratee (Sentence Text) (Read
 recordI = undefined
 
 indexItem :: Item Text (Context Text) -> Reader CommonStruct (Item Int (Context Int))
-indexItem = undefined
+indexItem (Item (Context a) (Context b) (Context c) t)  = do
+    (CommonStruct _ udb _ _ _ _) <- ask
+    return undefined
 
 countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
 countChunksI' log = I.liftI (step 0)
