@@ -21,41 +21,29 @@ import qualified Data.Iteratee as I
 
 import Data.Time.Clock
 
-import Control.Monad (void,when,(>=>))
+import Control.Monad (void,when)
 import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
 
-recordI :: Statement -> DBStatements -> I.Iteratee (Sentence Text) IO ()
-recordI lupS dbSQL = I.mapChunksM_ $
-    mapM_ (indexItem lupS >=> recordItem dbSQL).getItems
+import Codec.Digest.SHA (hash,Length (SHA256))
 
-recordItem :: DBStatements -> Item Text (Context Int) -> IO ()
-recordItem (pSQL,lSQL,sSQL) (Item p l s t) = do
-    pID <- recordContext pSQL (context2SQL p t)
-    lID <- recordContext lSQL (toSql pID:context2SQL l t)
-    recordContext_ sSQL (toSql lID:context2SQL s t)
-
-recordContext :: Statements -> [SqlValue] -> IO ID
-recordContext sql args = do
-    rownum <- execute (updateStatement sql) args
-    when (rownum == 0) (void $ execute (insertStatement sql) args)
-    sqlvals <- execute (lookupStatement sql) args >> fetchRow (lookupStatement sql)
-    case sqlvals of
-        Just [rowid] -> return $ fromSql rowid
-        Just x    -> error $ "Non-unique id; Database corrupt. "++ show x
-        Nothing   -> error $ "Insertion failed. Database corrupt. "++show args
-
-recordContext_ :: Statements -> [SqlValue] -> IO ()
-recordContext_ sql args = do
-    rownum <- execute (updateStatement sql) args
-    when (rownum == 0) (void $ execute (insertStatement sql) args)
+recordI' :: Int -> Statement -> Statement -> Statement -> I.Iteratee (Sentence Text) IO ()
+recordI' i insH updS insS = I.mapChunksM_ $
+    mapM_ record.getItems
+    where record :: Item Text (Context Text) -> IO ()
+          record item@(Item _ _ _ t) = do
+              let h = hash SHA256 item
+              rownum <- execute updS [toSql h, toSql i, toSql t]
+              when (rownum == 0) (do
+                  void $ execute insS [toSql h,toSql i, toSql t]
+                  void $ execute insH $ toSql h:contexts2SQL item)
 
 main :: IO ()
 main = do
-    (unigramT:contextT:corpus:_) <- getArgs
+    (contextT:corpus:shard:_) <- getArgs
     logVar    <- newChan
     startTime <- getCurrentTime
     term      <- terminal_handle
@@ -64,7 +52,7 @@ main = do
     let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
     putStrLn $ "Estimated amount of chunks: " ++ show etc
 
-    putStrLn $ "Starting at " ++ show startTime
+    putStrLn $ "Starting shard " ++ shard ++ " at " ++ show startTime
     void $ forkIO $ logger etc startTime logVar
 
     -- Two things are done in the opening and closing bracket: 
@@ -73,26 +61,23 @@ main = do
     -- The cursor must be hidden, because otherwise the logging action is going to
     -- cause epileptic shock.
     bracket (do putStr "Connecting…"
-                unigramA  <- establishConnection (unigramTable standardConfig) unigramT
                 contextdb <- connectSqlite3 contextT
                 hide_cursor term
-                return (unigramA,contextdb))
-            (\(unigramA,contextdb) ->
+                return contextdb)
+            (\contextdb ->
              do show_cursor term
                 putStrLn "Disconnecting…"
-                disconnect contextdb
-                disconnect $ connection unigramA)
-            (\(unigramA,contextdb) ->
-             do lupS <- lookupIndexSQL unigramA
-                cPStmts <- getcPStatements (Access contextdb "cP")
-                cLStmts <- getc'Statements (Access contextdb "cL")
-                cSStmts <- getc'Statements (Access contextdb "cS")
+                disconnect contextdb)
+            (\contextdb ->
+             do insH <- prepare contextdb insertHash
+                updS <- prepare contextdb updateWithHash
+                insS <- prepare contextdb insertWithHash
 
                 putStrLn "Connections established!\nRecording…"
 
                 I.run =<< enumFile chunk_size corpus (I.sequence_
                     [ countChunksI logVar
-                    , I.joinI $ I.convStream corpusI (recordI lupS (cPStmts,cLStmts,cSStmts))])
+                    , I.joinI $ I.convStream corpusI (recordI' (read shard) insH updS insS)])
 
                 putStrLn "Done.\nCommitting…"
                 doTimed_ (commit contextdb) >>= putStrLn.("Took "++).renderSecs.round

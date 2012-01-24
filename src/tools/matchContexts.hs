@@ -1,112 +1,150 @@
-{-# LANGUAGE TupleSections,BangPatterns #-}
+-- {-# LANGUAGE TupleSections,BangPatterns #-}
 module Main where
 
 import Prelude hiding (log)
 
-import PFEG.Types
-import PFEG.Common
-import PFEG.SQL
-import PFEG.Context
+import Data.Time.Clock
+import Data.List (intercalate)
+import Control.Monad.Reader
+import Control.Monad.State
+import GHC.IO.Handle (Handle)
+import Data.Maybe (catMaybes)
 
 import System.Environment (getArgs)
-import System.IO (hClose,openFile,hFileSize,withFile,IOMode(ReadMode,WriteMode))
-import System.Time.Utils
+import System.IO (hPutStr,hPutStrLn,IOMode(ReadMode,AppendMode),hFileSize,withFile,openFile,hClose,hFlush)
+import System.Time.Utils (renderSecs)
 
-import Database.HDBC
-import Database.HDBC.Sqlite3
-
-import Data.ByteString (ByteString)
-import Data.Text (Text)
-import qualified Data.ByteString.Lazy as L
-import qualified Data.Text as T
-
-import Data.Attoparsec.Iteratee
 import Data.Iteratee.IO
-import Data.Iteratee.Base
+import Data.Iteratee (Iteratee)
 import qualified Data.Iteratee as I
 
-import Data.Time.Clock
-import Data.List (findIndices)
-import Data.Maybe (fromMaybe)
-import Data.Int (Int32)
-import Data.Functor ((<$>))
-import Safe (atMay)
-
-import Control.Monad (liftM,forever,void,when,(>=>))
-import Control.Monad.Trans.Class (lift)
+import Control.Concurrent.MVar
 import Control.Concurrent.Chan
 import Control.Concurrent
 import Control.Exception (bracket)
 
 import Graphics.Vty.Terminal
 
-import GHC.IO.Handle (Handle,hFlush)
-import GHC.IO.Handle.FD (stdout)
+import Data.Text (Text)
+import qualified Data.Text as T
 
-data MatchMode = POS | LEM | CRD | SFC | NIL
-type Match = Context MatchMode
-type Count = Int
-data Result = Correct Match Count -- ^ Found a match, and the prediction was correct.
-            | Baseline Bool -- ^ Didn't find a match. Choose baseline and report if correct.
-            | Wrong Match Count -- ^ Found a match, but the prediction was incorrect.
+import Database.HDBC
+import Database.HDBC.Sqlite3
 
-matchContext :: Statement -> -- ^ SQL lookup statement for unigram indices
-               DBStatements -> -- ^ SQL statements for looking up cP cL cS and cC values
-               Item Text (Context Text) -> -- ^ An Item to match
-               IO Result
-matchContext lup stmts i = do
-    -- iBS <- liftM ((fmap.fmap) Magic.encodePair) (indexItem lup i)
-    
-    -- check for s1 s2 s3
-    -- s2id <- check for s1 s2
-    -- when s2id check for s1 s2 l3
-    -- check for s1
+import PFEG.Types hiding (Configuration,connection)
+import PFEG.Context
+import PFEG.Common hiding (Configuration)
 
-    return undefined
+data LogState = LogState { currentItem :: Int }
 
-matchI :: Handle -> Statement -> I.Iteratee (Sentence Text) IO ()
-matchI outH lupS = I.mapChunksM_ $
-    mapM_ (indexItem lupS >=> findMatches >=> logResult outH).getItems
+data Configuration = Configuration
+    { testShard  :: Maybe Int
+    , connection :: Connection
+    , logVar     :: MVar LogData
+    , sqlLogH    :: Handle
+    , resultH    :: Handle }
 
-findMatches :: Item Text (Context Int) -> IO Result
-findMatches = undefined
+data MatchMode = P | L | S deriving Show
+type MatchPattern = [Maybe MatchMode]
 
-logResult :: Handle -> Result -> IO ()
-logResult h = undefined
+data LogData = LogData 
+    { logItem :: Item Text (Context Text)
+    , logResults :: [(MatchPattern,Result)] }
+
+-- FIXME: this needs a pretty printer
+instance Show LogData where
+    show (LogData (Item _ _ (Context s) t) lr) = intercalate " | " (map T.unpack s) ++ "\nActual: " ++ T.unpack t
+        ++ "\n" ++ concatMap (\(mm,r) -> prettyMatchMode mm ++ ": " ++ show r ++ "\n") lr
+
+type SQLString = String
+type Result = [(Text,Int,Int)] -- list of possible predictions with associated counts.
+
+matchI :: Iteratee (Sentence Text) (ReaderT Configuration IO) ()
+matchI = I.mapChunksM_ $ mapM m . getItems
+    where m :: Item Text (Context Text) -> ReaderT Configuration IO ()
+          m i = do cf <- ask
+                   results <- mapM (sqlQuery i) matchmodes >>= mapM match
+                   liftIO $ putMVar (logVar cf) (LogData i (zip matchmodes results))
+
+-- | Given an SQL query, return the @Result@ from the database — an ordered list of target-count
+-- tuples.
+match :: SQLString -> ReaderT Configuration IO Result
+match s = do
+    cf   <- ask
+    (result,time) <- liftIO.doTimed $ liftM sqlToResult (quickQuery' (connection cf) s []) -- TODO: quickQuery or quickQuery' ?
+    liftIO $ hPutStrLn (sqlLogH cf) ((renderSecs.round $ time) ++ " | " ++ s) >> hFlush (sqlLogH cf)
+    return result
+    where sqlToResult [] = []
+          sqlToResult ((t:c:h:[]):xs) = (fromSql t, fromSql c, fromSql h):sqlToResult xs
+          sqlToResult xs = error $ "Unexpected data format." ++ show xs
+
+-- | Given a list of @MatchMode@s and an item, make the appropriate SQL string to retreive
+-- item counts per target for this particular pattern.
+sqlQuery :: Item Text (Context Text) -> [Maybe MatchMode] -> ReaderT Configuration IO SQLString
+sqlQuery (Item (Context pI) (Context lI) (Context sI) _t) mm = do
+    cf <- ask
+    let excludeShard = case testShard cf of Just s  -> "t != " ++ show s ++ " AND "
+                                            Nothing -> ""
+    return $ "SELECT t,sum(c) AS sums,count(DISTINCT hash.h) FROM hash,ctxt WHERE hash.h==ctxt.h AND " ++
+              excludeShard ++ intercalate " AND " pattern ++ " GROUP BY t ORDER BY sums DESC"
+    where pattern           = catMaybes $ zipWith3 mmSelect mm (zip3 pI lI sI) ([1..]::[Int])
+          f c s n           = Just $ c:show n ++ " =='" ++ T.unpack s ++ "'"
+          mmSelect (Just P) = f 'p'.fst3
+          mmSelect (Just L) = f 'l'.snd3
+          mmSelect (Just S) = f 's'.trd3
+          mmSelect Nothing  = \_ _ -> Nothing
+
+logResult :: Handle -> MVar LogData -> StateT LogState IO ()
+logResult h resV = forever log
+    where log = do (LogState n) <- get
+                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show >> hFlush h
+                   put (LogState $ n+1)
 
 main :: IO ()
 main = do
-    (unigramT:contextT:corpus:[]) <- getArgs
-    logVar   <- newChan
-
+    (contextT:corpus:shard:_) <- getArgs
+    statusV   <- newChan
+    resultV   <- newEmptyMVar
     startTime <- getCurrentTime
     term      <- terminal_handle
     csize     <- withFile corpus ReadMode hFileSize
 
-    let outS = corpus ++ ".log"
-    outH      <- openFile outS WriteMode
-    putStrLn $ "Logging results to "++outS
+    let etc = (fromIntegral csize `div` chunk_size)+1
+    putStrLn $ "Estimated amount of chunks " ++ show etc
 
-    let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
-    putStrLn $ "Estimated amount of chunks: " ++ show etc
+    void $ forkIO $ logger etc startTime statusV
 
-    putStrLn $ "Starting at " ++ show startTime
-    void $ forkIO $ logger etc startTime logVar
-
-    bracket (do putStr "Connecting…"
-                unigramA  <- establishConnection (unigramTable standardConfig) unigramT
-                contextdb <- connectSqlite3 contextT
+    bracket (do contextdb <- connectSqlite3 contextT
                 hide_cursor term
-                return (unigramA,contextdb))
-            (\(unigramA,contextdb) ->
-             do show_cursor term
-                putStrLn "Disconnecting…"
+                sqlLogH' <- openFile "sql.log" AppendMode
+                resultH' <- openFile "result.log" AppendMode
+                return (contextdb,sqlLogH',resultH'))
+            (\(contextdb,sqlLogH',resultH') -> do
+                show_cursor term
                 disconnect contextdb
-                hClose outH
-                disconnect $ connection unigramA)
-            (\(unigramA,contextdb) ->
-             do lupS <- lookupIndexSQL unigramA
-                I.run =<< enumFile chunk_size corpus (I.sequence_
-                    [ countChunksI logVar
-                    , I.joinI $ I.convStream corpusI (matchI outH lupS) ])
-                putStrLn "Done.")
+                hClose sqlLogH'
+                hClose resultH')
+            (\(contextdb,sqlLogH',resultH') -> do
+                let cf = Configuration
+                         { testShard = Just $ read shard
+                         , connection = contextdb
+                         , logVar = resultV
+                         , sqlLogH = sqlLogH'
+                         , resultH = resultH' }
+                void $ forkIO (void $ runStateT (logResult resultH' resultV) (LogState 1))
+                (runReaderT $ I.run =<< enumFile chunk_size corpus (I.joinI $ I.convStream corpusI matchI)) cf)
+
+prettyMatchMode :: [Maybe MatchMode] -> String
+prettyMatchMode = take 6.concatMap (maybe "_" show).(++ repeat Nothing)
+
+-- preliminary list of matchmodes
+matchmodes :: [[Maybe MatchMode]]
+matchmodes = [ map Just [S,S,S,S,S,S]
+             , map Just [L,L,L,L,L,L]
+             , map Just [P,P,P,P,P,P]
+             , Nothing : map Just [S,S,S,S]
+             , Nothing : map Just [L,L,L,L]
+             , Nothing : map Just [P,P,P,P]
+             , Nothing : Nothing : map Just [S,S]
+             , Nothing : Nothing : map Just [L,L]
+             , Nothing : Nothing : map Just [P,P] ]

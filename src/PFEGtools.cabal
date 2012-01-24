@@ -28,9 +28,19 @@ Executable indexUnigrams
     Main-is:          tools/indexUnigrams.hs
 
 Executable recordContexts
-    Build-Depends:    bytestring, attoparsec-iteratee >= 0.3.0, HDBC, HDBC-sqlite3, iteratee >= 0.8.6.1, base, text, safe, transformers, vty, MissingH
+    Build-Depends:    bytestring, attoparsec-iteratee >= 0.3.0, HDBC, HDBC-sqlite3, iteratee >= 0.8.6.1, base, text, safe, transformers, vty, MissingH, SHA2
     ghc-options:      -O2 -Wall -threaded -rtsopts
     Main-is:          tools/recordContexts.hs
+
+Executable matchContexts
+    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl
+    ghc-options:      -O2 -Wall -threaded -rtsopts
+    Main-is:          tools/matchContexts.hs
+
+Executable pfeg
+    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl, cmdargs
+    ghc-options:      -O2 -Wall -threaded -rtsopts
+    Main-is:          tools/pfeg.hs
 
 Library
     Build-Depends:    time < 1.3, unordered-containers < 0.2, text < 0.12, attoparsec, binary, convertible
