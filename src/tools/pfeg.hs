@@ -126,30 +126,6 @@ data LogMessage = Done
 data LogState = LogState { lastStart :: UTCTime
                          , lastMessg :: String }
 
-statusLog :: MVar LogMessage -> IO ()
-statusLog lv = do
-    t0 <- getCurrentTime
-    ls <- newEmptyMVar
-    void $ forkIO $ void $ evalStateT (forever $ l' ls) (LogState t0 "Initializing.")
-    where l :: MVar LogState -> IO ()
-          l ls = do curM <- takeMVar lv
-                    t <- getCurrentTime
-                    case curM of
-                         Start m    -> ls `putMVar` LogState t ("\nStart: " ++ m)
-                         Done       -> ls `putMVar` LogState t "\nDone."
-                         Message m  -> ls `putMVar` LogState t m
-                         Progress p -> undefined
-                         Finish     -> undefined
-          l' :: MVar LogState -> StateT LogState IO ()
-          l' ls = do maybeCurS <- liftIO $ tryTakeMVar ls
-                     case maybeCurS of
-                          Nothing -> do
-                              t' <- liftIO getCurrentTime
-                              (LogState t m) <- get
-                              let s = renderSecs.round $ t' `diffUTCTime` t
-                              liftIO $ putStr ("\r" ++ m ++ " (" ++ s ++ ")") >> threadDelay 300000
-                          Just curS@(LogState _t m) -> liftIO (putStr m) >> put curS
-
 initCommon :: FilePath -> FilePath -> FilePath -> Int -> IO CommonStruct
 initCommon c u db i = do putStrLn "Initializing."
                          sv' <- newEmptyMVar
@@ -197,3 +173,30 @@ handle (Record c u db _sql i) =
 
 handle (Match  c u db _sql i r) = do cs <- initCommon c u db i
                                      return ()
+
+{-
+statusLog :: MVar LogMessage -> IO ()
+statusLog lv = do
+    t0 <- getCurrentTime
+    ls <- newEmptyMVar
+    void $ forkIO $ void $ evalStateT (forever $ l' ls) (LogState t0 "Initializing.")
+    where l :: MVar LogState -> IO ()
+          l ls = do curM <- takeMVar lv
+                    t <- getCurrentTime
+                    case curM of
+                         Start m    -> ls `putMVar` LogState t ("\nStart: " ++ m)
+                         Done       -> ls `putMVar` LogState t "\nDone."
+                         Message m  -> ls `putMVar` LogState t m
+                         Progress p -> undefined
+                         Finish     -> undefined
+          l' :: MVar LogState -> StateT LogState IO ()
+          l' ls = do maybeCurS <- liftIO $ tryTakeMVar ls
+                     case maybeCurS of
+                          Nothing -> do
+                              t' <- liftIO getCurrentTime
+                              (LogState t m) <- get
+                              let s = renderSecs.round $ t' `diffUTCTime` t
+                              liftIO $ putStr ("\r" ++ m ++ " (" ++ s ++ ")") >> threadDelay 300000
+                          Just curS@(LogState _t m) -> liftIO (putStr m) >> put curS
+-}
+
