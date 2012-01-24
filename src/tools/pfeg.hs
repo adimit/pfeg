@@ -1,19 +1,23 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Main where
 
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
+import Data.Text (Text)
+import qualified Data.HashMap.Strict as M
+import Data.HashMap.Strict (HashMap)
+
+import Data.Time.Clock
+
+import Control.Concurrent.MVar
+import Control.Concurrent (threadDelay)
 
 import Control.Monad.Trans.State.Strict
-
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
-import Data.Text (Text)
 import System.Console.CmdArgs
 
 {- START CMDARGS GIBBERISH -}
@@ -88,15 +92,43 @@ cacheHash s = liftIO (void $ execute s []) >> fetchAll
                Nothing       -> return ()
                _             -> fail "Malformed result in unigrams."
 
-data CommonStruct = CommonStruct { cc :: FilePath, uids :: UnigramIDs, cdb :: Connection, ci :: Int }
+data CommonStruct = CommonStruct
+    { cCorpus :: FilePath
+    , cUnigramIds :: UnigramIDs
+    , cDatabase :: Connection
+    , cShard :: Int
+    , cStatusVar :: MVar LogMessage }
+
+data LogMessage = Done
+                | Start { message :: String }
+                | Message { message :: String }
+                | Progress { progress :: Maybe Double }
+                | Finish
+
+data LogState = LogState { lastStart :: Maybe UTCTime }
+
+statusLog :: MVar LogMessage -> IO ()
+statusLog lv = do
+    t0 <- getCurrentTime
+    evalStateT l (LogState $ Just t0)
+    where l :: StateT LogState IO ()
+          l = do curM <- liftIO $ tryTakeMVar lv
+                 case curM of
+                      Just (Start m)    -> undefined
+                      Just Done         -> liftIO (putStrLn "\nDone.") >> l
+                      Just (Message m)  -> liftIO (putStrLn $ "\rMessage: " ++ m ++ "\n") >> l
+                      Just (Progress p) -> undefined
+                      Just Finish       -> liftIO $ putStrLn "\nExit (finished)"
+                      Nothing           -> liftIO $ threadDelay 10
 
 initCommon :: FilePath -> FilePath -> FilePath -> Int -> IO CommonStruct
-initCommon c u db i = do cu' <- connectSqlite3 u
+initCommon c u db i = do sv' <- newEmptyMVar
+                         cu' <- connectSqlite3 u
                          cdb' <- connectSqlite3 db
                          s <- prepare cu' "SELECT f,id FROM unigrams"
                          uids' <- execStateT (cacheHash s) M.empty
                          disconnect cu'
-                         return $ CommonStruct c uids' cdb' i
+                         return $ CommonStruct c uids' cdb' i sv'
 
 handle :: PFEGMain -> IO ()
 handle (Record c u db sql i)   = do cs <- initCommon c u db i
