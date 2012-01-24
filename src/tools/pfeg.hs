@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE BangPatterns,DeriveDataTypeable #-}
 module Main where
 
 import PFEG.SQL
@@ -11,6 +11,9 @@ import System.Time.Utils (renderSecs)
 import qualified Data.Iteratee as I
 import Data.Iteratee (Iteratee)
 import Data.Iteratee.IO
+import Data.Iteratee.Base
+import Control.Monad.Trans.Class (lift)
+import Data.ByteString (ByteString)
 
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
 
@@ -27,6 +30,7 @@ import Control.Concurrent (forkIO,threadDelay)
 import Control.Exception (bracket)
 
 import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (void,forever)
 
@@ -138,11 +142,17 @@ initCommon c u db i = do putStrLn "Initializing."
                          t <- terminal_handle
                          return $ CommonStruct c uids' cdb' i sv' t
 
-recordI :: CommonStruct -> Statement -> Statement -> Statement -> Iteratee (Sentence Text) IO ()
+recordI :: Statement -> Statement -> Statement -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
 recordI = undefined
 
 indexItem :: Item Text (Context Text) -> Item Int (Context Int)
 indexItem = undefined
+
+countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
+countChunksI' log = I.liftI (step 0)
+    where step (!i) (Chunk _) = let i' = i+1
+                                in lift (liftIO $ writeChan log i') >> I.liftI (step i')
+          step _    stream    = I.idone () stream
 
 handle :: PFEGMain -> IO ()
 handle (Record c u db _sql i) =
@@ -163,9 +173,9 @@ handle (Record c u db _sql i) =
 
                 void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
 
-                I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
-                    [ countChunksI logVar
-                    , I.joinI $ I.convStream corpusI (recordI session insertCtxtS insertTrgtS updateS)])
+                runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
+                    [ countChunksI' logVar,
+                    I.joinI $ I.convStream corpusI (recordI insertCtxtS insertTrgtS updateS)])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
