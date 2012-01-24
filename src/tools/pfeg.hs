@@ -145,7 +145,7 @@ initCommon c u db i = do putStrLn "Initializing."
 recordI :: Statement -> Statement -> Statement -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
 recordI = undefined
 
-indexItem :: Item Text (Context Text) -> Item Int (Context Int)
+indexItem :: Item Text (Context Text) -> Reader CommonStruct (Item Int (Context Int))
 indexItem = undefined
 
 countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
@@ -174,8 +174,8 @@ handle (Record c u db _sql i) =
                 void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
 
                 runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
-                    [ countChunksI' logVar,
-                    I.joinI $ I.convStream corpusI (recordI insertCtxtS insertTrgtS updateS)])) session
+                    [ countChunksI' logVar
+                    , I.joinI $ I.convStream corpusI (recordI insertCtxtS insertTrgtS updateS)])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
