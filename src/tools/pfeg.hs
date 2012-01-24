@@ -38,7 +38,7 @@ instance Show PFEGMain where
 standardMessage :: String -> FilePath -> FilePath -> FilePath -> Maybe FilePath -> Int -> String -> String
 standardMessage m c u db sql i r = m ++ " '" ++ db ++ "'\n" ++
                                    "from corpus '" ++ c ++ "', shard " ++ show i ++ ".\n" ++
-                                   "unigrams are '" ++ u ++ "\n" ++ r ++ "\n" ++
+                                   "unigrams are '" ++ u ++ "'\n" ++ r ++ "\n" ++
                                    case sql of
                                         Nothing  -> ""
                                         (Just x) -> "Logging SQL to '" ++ x ++ "'.\n"
