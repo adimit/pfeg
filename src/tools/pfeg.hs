@@ -1,6 +1,18 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Main where
 
+import PFEG.SQL
+import PFEG.Types
+import PFEG.Common
+
+import System.Time.Utils (renderSecs)
+
+import qualified Data.Iteratee as I
+import Data.Iteratee (Iteratee)
+import Data.Iteratee.IO
+
+import System.IO (hFileSize,withFile,IOMode(ReadMode))
+
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as M
@@ -9,16 +21,20 @@ import Data.HashMap.Strict (HashMap)
 import Data.Time.Clock
 
 import Control.Concurrent.MVar
-import Control.Concurrent (threadDelay)
+import Control.Concurrent.Chan
+import Control.Concurrent (forkIO,threadDelay)
+import Control.Exception (bracket)
 
 import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (void)
+import Control.Monad (void,forever)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
 import System.Console.CmdArgs
+
+import Graphics.Vty.Terminal
 
 {- START CMDARGS GIBBERISH -}
 
@@ -97,7 +113,8 @@ data CommonStruct = CommonStruct
     , cUnigramIds :: UnigramIDs
     , cDatabase :: Connection
     , cShard :: Int
-    , cStatusVar :: MVar LogMessage }
+    , cStatusVar :: MVar LogMessage
+    , cTerm :: TerminalHandle }
 
 data LogMessage = Done
                 | Start { message :: String }
@@ -105,33 +122,74 @@ data LogMessage = Done
                 | Progress { progress :: Maybe Double }
                 | Finish
 
-data LogState = LogState { lastStart :: Maybe UTCTime }
+data LogState = LogState { lastStart :: UTCTime
+                         , lastMessg :: String }
 
 statusLog :: MVar LogMessage -> IO ()
 statusLog lv = do
     t0 <- getCurrentTime
-    evalStateT l (LogState $ Just t0)
-    where l :: StateT LogState IO ()
-          l = do curM <- liftIO $ tryTakeMVar lv
-                 case curM of
-                      Just (Start m)    -> undefined
-                      Just Done         -> liftIO (putStrLn "\nDone.") >> l
-                      Just (Message m)  -> liftIO (putStrLn $ "\rMessage: " ++ m ++ "\n") >> l
-                      Just (Progress p) -> undefined
-                      Just Finish       -> liftIO $ putStrLn "\nExit (finished)"
-                      Nothing           -> liftIO $ threadDelay 10
+    ls <- newEmptyMVar
+    void $ forkIO $ void $ evalStateT (forever $ l' ls) (LogState t0 "Initializing.")
+    where l :: MVar LogState -> IO ()
+          l ls = do curM <- takeMVar lv
+                    t <- getCurrentTime
+                    case curM of
+                         Start m    -> ls `putMVar` LogState t ("\nStart: " ++ m)
+                         Done       -> ls `putMVar` LogState t "\nDone."
+                         Message m  -> ls `putMVar` LogState t m
+                         Progress p -> undefined
+                         Finish     -> undefined
+          l' :: MVar LogState -> StateT LogState IO ()
+          l' ls = do maybeCurS <- liftIO $ tryTakeMVar ls
+                     case maybeCurS of
+                          Nothing -> do
+                              t' <- liftIO getCurrentTime
+                              (LogState t m) <- get
+                              let s = renderSecs.round $ t' `diffUTCTime` t
+                              liftIO $ putStr ("\r" ++ m ++ " (" ++ s ++ ")") >> threadDelay 300000
+                          Just curS@(LogState _t m) -> liftIO (putStr m) >> put curS
 
 initCommon :: FilePath -> FilePath -> FilePath -> Int -> IO CommonStruct
-initCommon c u db i = do sv' <- newEmptyMVar
+initCommon c u db i = do putStrLn "Initializing."
+                         sv' <- newEmptyMVar
                          cu' <- connectSqlite3 u
                          cdb' <- connectSqlite3 db
                          s <- prepare cu' "SELECT f,id FROM unigrams"
                          uids' <- execStateT (cacheHash s) M.empty
                          disconnect cu'
-                         return $ CommonStruct c uids' cdb' i sv'
+                         putStrLn "Done."
+                         t <- terminal_handle
+                         return $ CommonStruct c uids' cdb' i sv' t
+
+recordI :: Int -> Statement -> Statement -> Statement -> Iteratee (Sentence Text) IO ()
+recordI = undefined
 
 handle :: PFEGMain -> IO ()
-handle (Record c u db sql i)   = do cs <- initCommon c u db i
-                                    return ()
-handle (Match  c u db sql i r) = do cs <- initCommon c u db i
-                                    return ()
+handle (Record c u db _sql i) =
+    bracket (do session <- initCommon c u db i
+                hide_cursor (cTerm session)
+                return session)
+            (\session -> do
+                disconnect (cDatabase session)
+                show_cursor (cTerm session))
+            (\session -> do
+                insertCtxtS <- prepare (cDatabase session) insertCtxtSQL
+                insertTrgtS <- prepare (cDatabase session) insertTargetSQL
+                updateS     <- prepare (cDatabase session) updateSQL
+
+                logVar <- newChan
+                t0     <- getCurrentTime
+                csize  <- withFile (cCorpus session) ReadMode hFileSize
+
+                void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
+
+                I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
+                    [ countChunksI logVar
+                    , I.joinI $ I.convStream corpusI (recordI (cShard session) insertCtxtS insertTrgtS updateS)])
+
+                putStrLn "Committing…"
+                doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
+                putStrLn "Done.")
+
+handle (Match  c u db _sql i r) = do cs <- initCommon c u db i
+                                     return ()
