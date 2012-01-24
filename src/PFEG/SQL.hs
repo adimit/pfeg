@@ -6,6 +6,10 @@ module PFEG.SQL
     , insertHash
     , insertWithHash
     , updateWithHash
+      -- * New SQL statements
+    , updateSQL
+    , insertCtxtSQL
+    , insertTargetSQL
     ) where
 
 import Database.HDBC
@@ -23,6 +27,15 @@ insertHash = "INSERT OR IGNORE INTO hash (h,"++contextNames++") VALUES (?,"++ qu
     where contextNames = intercalate "," $ map (`commas` [1..6]) "slp"
 updateWithHash = "UPDATE ctxt SET c=c+1 WHERE h==? AND i==? AND t==?"
 insertWithHash = "INSERT INTO ctxt (h,i,t,c) VALUES (?,?,?,1)"
+
+
+updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
+updateSQL = "UPDATE targets SET c=c+1 WHERE id="++selectSubquerySQL++" AND t==? AND i==?"
+insertCtxtSQL = "INSERT or IGNORE INTO ctxt ("++contextNames++") VALUES ("++questionmarks 18++")"
+    where contextNames = intercalate "," $ map (`commas` [1..6]) "slp"
+insertTargetSQL = "INSERT INTO targets (id,t,i,c) VALUES ("++selectSubquerySQL++",?,?,1)"
+selectSubquerySQL = "(SELECT id FROM ctxt WHERE "++ cn ++")"
+    where cn = intercalate " AND " $ map (\c -> intercalate " AND " $ map (++"==?") (letters c [1..6])) "slp"
 
 commas :: Char -> [Int] -> String
 commas c = intercalate "," . letters c
