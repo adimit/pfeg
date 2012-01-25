@@ -109,7 +109,9 @@ cacheHash s = liftIO (void $ execute s []) >> fetchAll
     where fetchAll = do
           row <- liftIO $ fetchRow s
           case row of
-               Just (f:i:[]) -> get >>= put . M.insert (fromSql f) (fromSql i) >> fetchAll
+               Just (f:i:[]) -> do m <- get
+                                   put $! M.insert (fromSql f) (fromSql i) m
+                                   fetchAll
                Nothing       -> return ()
                _             -> fail "Malformed result in unigrams."
 
