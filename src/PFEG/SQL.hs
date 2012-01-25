@@ -46,10 +46,10 @@ letters c = map ((c:) . show)
 questionmarks :: Int -> String
 questionmarks range = intersperse ',' $ replicate range '?'
 
-item2SQL :: (Convertible a SqlValue, Convertible i SqlValue) => Int -> Item i (Context a) -> [SqlValue]
+item2SQL :: (Convertible i SqlValue) => Int -> Item i -> [SqlValue]
 item2SQL i (Item (Context ps) (Context ls) (Context ss) t) =
     toSql i: toSql t: (map toSql ss ++ map toSql ls ++ map toSql ps)
 
-contexts2SQL :: (Convertible a SqlValue) => Item i (Context a) -> [SqlValue]
+contexts2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 contexts2SQL (Item (Context a) (Context b) (Context c) _t) =
     map toSql (c++b++a)
