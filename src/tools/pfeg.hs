@@ -143,8 +143,12 @@ initCommon c u db i = do putStrLn "Initializing."
                          t <- terminal_handle
                          return $ CommonStruct c uids' cdb' i sv' t
 
-recordI :: Statement -> Statement -> Statement -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-recordI = undefined
+data SQL = RecordSQL { updateTarget  :: Statement
+                     , insertContext :: Statement
+                     , insertTarget  :: Statement }
+
+recordI :: SQL -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
+recordI sql = undefined
 
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . flip M.lookup udb) `fmap` i
@@ -173,17 +177,21 @@ handle (Record c u db _sql i) =
                 csize  <- withFile (cCorpus session) ReadMode hFileSize
 
                 void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
+                let sql = RecordSQL { updateTarget  = updateS
+                                    , insertContext = insertCtxtS
+                                    , insertTarget  = insertTrgtS }
 
                 runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
                     [ countChunksI' logVar
-                    , I.joinI $ I.convStream corpusI (recordI insertCtxtS insertTrgtS updateS)])) session
+                    , I.joinI $ I.convStream corpusI (recordI sql)])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
                 putStrLn "Done.")
 
-handle (Match  c u db _sql i r) = do cs <- initCommon c u db i
-                                     return ()
+handle (Match  c u db _sql i _r) = do
+    _cs <- initCommon c u db i
+    return ()
 
 {-
 statusLog :: MVar LogMessage -> IO ()
