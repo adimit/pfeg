@@ -12,7 +12,6 @@ import qualified Data.Iteratee as I
 import Data.Iteratee (Iteratee)
 import Data.Iteratee.IO
 import Data.Iteratee.Base
-import Control.Monad.Trans.Class (lift)
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 
@@ -164,7 +163,7 @@ indexItem udb i = (fromMaybe 1 . flip M.lookup udb) `fmap` i
 countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
 countChunksI' log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
-                                in lift (liftIO $ writeChan log i') >> I.liftI (step i')
+                                in liftIO (writeChan log i') >> I.liftI (step i')
           step _    stream    = I.idone () stream
 
 handle :: PFEGMain -> IO ()

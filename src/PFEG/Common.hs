@@ -32,7 +32,7 @@ import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
 import Data.ByteString (ByteString)
-import Control.Monad.Trans.Class (lift)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad (forever)
 import Control.Concurrent.Chan
 import Data.Attoparsec.Iteratee
@@ -116,7 +116,7 @@ corpusI = parserToIteratee sentenceP
 countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
 countChunksI log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
-                                in lift (writeChan log i') >> I.liftI (step i')
+                                in liftIO (writeChan log i') >> I.liftI (step i')
           step _    stream    = I.idone () stream
 
 logger :: Int -> UTCTime -> Chan Int -> IO ()
