@@ -12,30 +12,10 @@ Executable wac2tt
     Main-is:          tools/wac2tt.hs
     ghc-options:      -O2 -Wall
 
-Executable ttCountTag
-    Build-Depends:    base, bytestring, containers
-    Main-is:          tools/ttCountTag.hs
-    ghc-options:      -O2 -Wall
-
 Executable unigramTable
     Build-Depends:    bytestring, base, text, iteratee, unordered-containers, HDBC, HDBC-sqlite3
     ghc-options:      -O2 -Wall
     Main-is:          tools/unigramTable.hs
-
-Executable indexUnigrams
-    Build-Depends:    bytestring, base, text, HDBC, HDBC-sqlite3
-    ghc-options:      -O2 -Wall
-    Main-is:          tools/indexUnigrams.hs
-
-Executable recordContexts
-    Build-Depends:    bytestring, attoparsec-iteratee >= 0.3.0, HDBC, HDBC-sqlite3, iteratee >= 0.8.6.1, base, text, safe, transformers, vty, MissingH, SHA2
-    ghc-options:      -O2 -Wall -threaded -rtsopts
-    Main-is:          tools/recordContexts.hs
-
-Executable matchContexts
-    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl
-    ghc-options:      -O2 -Wall -threaded -rtsopts
-    Main-is:          tools/matchContexts.hs
 
 Executable pfeg
     Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl, cmdargs
