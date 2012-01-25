@@ -4,7 +4,6 @@ module PFEG.Context
       Context(..)
     , Item(..)
       -- * Transformation functions
-    , indexItem
     , getItems
     ) where
 
@@ -13,12 +12,6 @@ import PFEG.Types
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (encodeUtf8)
-import qualified Data.ByteString as B
-
-import qualified Data.Traversable as Tr
-
-import Database.HDBC
 
 import Data.List (findIndices)
 import Data.Maybe (fromMaybe)
@@ -28,44 +21,24 @@ import Data.Foldable (Foldable)
 
 import Safe (atMay)
 
-import Codec.Digest.SHA.Monad
 import Prelude hiding (null)
 
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
 
--- | Notice that this hashes *only* the contexts, not the target.
-instance Hashable (Item a (Context Text)) where
-    update (Item (Context a) (Context b) (Context c) _t) =
-    -- We intercalate a 1, so that @hash ["ab","c"] /= hash ["a","bc"]@
-           update $ B.intercalate null $ map encodeUtf8 (a++b++c)
-                where null = B.singleton 1
+data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
+                   , lItem :: Context i -- ^ Lemma part of the item
+                   , sItem :: Context i -- ^ Surface part of the item
+                   , target :: i-- ^ Target functional element of the item
+                   } deriving (Functor,Foldable,Traversable,Show)
 
-data Item i a = Item { pItem :: a -- ^ Part of speech part of the item
-                     , lItem :: a -- ^ Lemma part of the item
-                     , sItem :: a -- ^ Surface part of the item
-                     , target :: i-- ^ Target functional element of the item
-                     } deriving (Functor,Foldable,Traversable,Show)
-
-lookupIndex :: Statement -> Text -> IO Int
-lookupIndex stmt t =
-    do sqlvals <- execute stmt [toSql t] >> fetchRow stmt
-       case sqlvals of
-           Just [sqlval] -> return $ fromSql sqlval
-           _ -> error $ '\'':T.unpack t ++ "' did not yield an index or too many."
-
-indexItem :: Statement -> Item Text (Context Text) -> IO (Item Text (Context Int))
-indexItem stmt = return =<< Tr.mapM (indexContext stmt)
-
-indexContext :: Statement -> Context Text -> IO (Context Int)
-indexContext stmt c = return =<< Tr.mapM (lookupIndex stmt) c
-
-getItems :: Sentence Text -> [Item Text (Context Text)]
+-- | Get all items in a text
+getItems :: Sentence Text -> [Item Text]
 getItems s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s -- punctuation is tagged starting with $.
                  target_indices = findIndices (\(w,_,_) -> w `elem` targets') s_no_punct
              in  map (getItem s_no_punct) target_indices
 
 -- | Get the item in sentence @s@ at position @i@.
-getItem :: Sentence Text -> Int -> Item Text (Context Text)
+getItem :: Sentence Text -> Int -> Item Text
 getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
                   wordContext = Context [a,b,c,d,e,f]
                   (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
