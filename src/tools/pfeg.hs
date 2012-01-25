@@ -158,7 +158,7 @@ recordI sql = I.mapChunksM_ $ mapM r.getItems
                         void.liftIO $ execute (insertTarget  sql) pattern')
 
 indexItem :: UnigramIDs -> Item Text -> Item Int
-indexItem udb i = (fromMaybe 1 . flip M.lookup udb) `fmap` i
+indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
 countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
 countChunksI' log = I.liftI (step 0)
@@ -172,6 +172,7 @@ handle (Record c u db _sql i) =
                 hide_cursor (cTerm session)
                 return session)
             (\session -> do
+                putStrLn "Disconnecting…"
                 disconnect (cDatabase session)
                 show_cursor (cTerm session))
             (\session -> do
