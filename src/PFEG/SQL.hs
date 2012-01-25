@@ -3,7 +3,9 @@ module PFEG.SQL
     ( contexts2SQL
     , item2SQL
     , item2SQL'
+    , item2SQLp
       -- * New SQL statements
+    , matchSQL
     , updateSQL
     , insertCtxtSQL
     , insertTargetSQL
@@ -14,6 +16,7 @@ import Database.HDBC
 import PFEG.Context
 
 import Data.List (intercalate,intersperse)
+import Data.Maybe (catMaybes)
 
 import Data.Convertible.Base (Convertible)
 
@@ -30,6 +33,24 @@ UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
 CREATE TABLE targets (id integer, t integer, c integer, i integer, primary key(id,t,i));
 
  -}
+
+data MatchMode = P | L | S deriving Show
+type MatchPattern = [Maybe MatchMode]
+
+matchSQL :: Int -> String -> String
+matchSQL i p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM target,ctxt WHERE ctxt.id==target.id AND "
+    ++ "i <> " ++ show i ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
+
+mkPattern :: MatchPattern -> String
+mkPattern mm = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
+    where f c n       = Just $ c:show n ++ "==?"
+          ms (Just P) = f 'p'
+          ms (Just L) = f 'l'
+          ms (Just S) = f 's'
+          ms Nothing  = const Nothing
+
+item2SQLp :: (Convertible i SqlValue) => MatchPattern -> Item i -> [SqlValue]
+item2SQLp = undefined --similar to mkPatterN!
 
 updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
 updateSQL = "UPDATE targets SET c=c+1 WHERE i==? AND t==? AND id="++selectSubquerySQL
