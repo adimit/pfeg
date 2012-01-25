@@ -14,6 +14,7 @@ import Data.Iteratee.IO
 import Data.Iteratee.Base
 import Control.Monad.Trans.Class (lift)
 import Data.ByteString (ByteString)
+import Data.Maybe (fromMaybe)
 
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
 
@@ -145,10 +146,8 @@ initCommon c u db i = do putStrLn "Initializing."
 recordI :: Statement -> Statement -> Statement -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
 recordI = undefined
 
-indexItem :: Item Text (Context Text) -> Reader CommonStruct (Item Int (Context Int))
-indexItem (Item (Context a) (Context b) (Context c) t)  = do
-    (CommonStruct _ udb _ _ _ _) <- ask
-    return undefined
+indexItem :: UnigramIDs -> Item Text -> Item Int
+indexItem udb i = (fromMaybe 1 . flip M.lookup udb) `fmap` i
 
 countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
 countChunksI' log = I.liftI (step 0)
