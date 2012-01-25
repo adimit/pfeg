@@ -33,7 +33,7 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (void,forever)
+import Control.Monad (when,void,forever)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -148,7 +148,15 @@ data SQL = RecordSQL { updateTarget  :: Statement
                      , insertTarget  :: Statement }
 
 recordI :: SQL -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-recordI sql = undefined
+recordI sql = I.mapChunksM_ $ mapM r.getItems
+    where r :: Item Text -> ReaderT CommonStruct IO ()
+          r i = do cf <- ask
+                   let pattern  = item2SQL $ indexItem (cUnigramIds cf) i
+                       pattern' = toSql (cShard cf):toSql (target i):pattern
+                   numRows <- liftIO $ execute (updateTarget sql) pattern'
+                   when (numRows == 0) (do
+                        void.liftIO $ execute (insertContext sql) pattern
+                        void.liftIO $ execute (insertTarget  sql) pattern')
 
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . flip M.lookup udb) `fmap` i
