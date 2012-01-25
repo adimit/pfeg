@@ -19,6 +19,18 @@ import Data.Convertible.Base (Convertible)
 
 import Prelude hiding (null)
 
+{- .schema
+
+CREATE TABLE ctxt (id integer primary key autoincrement, s1 integer,s2
+integer,s3 integer,s4 integer,s5 integer,s6 integer,l1 integer,l2 integer,l3
+integer,l4 integer,l5 integer,l6 integer,p1 integer,p2 integer,p3 integer,p4
+integer,p5 integer,p6 integer,
+UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
+
+CREATE TABLE targets (id integer, t integer, c integer, i integer, primary key(id,t,i));
+
+ -}
+
 updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
 updateSQL = "UPDATE targets SET c=c+1 WHERE i==? AND t==? AND id="++selectSubquerySQL
 insertCtxtSQL = "INSERT or IGNORE INTO ctxt ("++contextNames++") VALUES ("++questionmarks 18++")"
