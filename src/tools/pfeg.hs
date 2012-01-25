@@ -148,17 +148,6 @@ data SQL = RecordSQL { updateTarget  :: Statement
                      , insertContext :: Statement
                      , insertTarget  :: Statement }
 
-recordI :: SQL -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-recordI sql = I.mapChunksM_ $ mapM r.getItems
-    where r :: Item Text -> ReaderT CommonStruct IO ()
-          r i = do cf <- ask
-                   let pattern  = item2SQL $ indexItem (cUnigramIds cf) i
-                       pattern' = toSql (cShard cf):toSql (target i):pattern
-                   numRows <- liftIO $ execute (updateTarget sql) pattern'
-                   when (numRows == 0) (do
-                        void.liftIO $ execute (insertContext sql) pattern
-                        void.liftIO $ execute (insertTarget  sql) pattern')
-
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
@@ -193,7 +182,7 @@ handle (Record c u db _sql i) =
 
                 runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
                     [ countChunksI' logVar
-                    , I.joinI $ I.convStream corpusI (recordI sql)])) session
+                    , I.joinI $ I.convStream corpusI (mainI (recordF sql))])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
@@ -202,6 +191,21 @@ handle (Record c u db _sql i) =
 handle (Match  c u db _sql i _r) = do
     _cs <- initCommon c u db i
     return ()
+
+mainI :: (Item Text -> ReaderT CommonStruct IO ()) -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
+mainI f = I.mapChunksM_ $ mapM f.getItems
+
+recordF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
+recordF sql i = do cf <- ask
+                   let pattern  = item2SQL $ indexItem (cUnigramIds cf) i
+                       pattern' = toSql (cShard cf):toSql (target i):pattern
+                   numRows <- liftIO $ execute (updateTarget sql) pattern'
+                   when (numRows == 0) (do
+                        void.liftIO $ execute (insertContext sql) pattern
+                        void.liftIO $ execute (insertTarget  sql) pattern')
+
+matchF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
+matchF = undefined
 
 {-
 statusLog :: MVar LogMessage -> IO ()
