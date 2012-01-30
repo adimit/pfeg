@@ -19,6 +19,10 @@ module PFEG.Common
     , corpusI
       -- * Constants
     , chunk_size
+      -- * Configuration
+    , UnigramIDs
+    , CommonStruct(..)
+    , LogMessage(..)
     ) where
 
 import PFEG.Types
@@ -26,6 +30,11 @@ import Data.Time.Clock
 import qualified Data.Text as X
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
+
+import Control.Concurrent.MVar
+import Database.HDBC.Sqlite3
+import Data.HashMap.Strict (HashMap)
+import Graphics.Vty.Terminal
 
 import Data.ByteString (ByteString)
 import Control.Monad.IO.Class (liftIO)
@@ -118,4 +127,20 @@ logger etc startTime logVar = forever log -- who wants to be forever log?
                              ++ " chunks; ("++ show (round percent :: Integer)
                              ++ "%) ETA: " ++ renderS (eta-difference) ++ "   "
                    hFlush stdout
+
+type UnigramIDs = HashMap Text Int
+
+data CommonStruct = CommonStruct
+    { cCorpus :: FilePath
+    , cUnigramIds :: UnigramIDs
+    , cDatabase :: Connection
+    , cShard :: Int
+    , cStatusVar :: MVar LogMessage
+    , cTerm :: TerminalHandle }
+
+data LogMessage = Done
+                | Start { message :: String }
+                | Message { message :: String }
+                | Progress { progress :: Maybe Double }
+                | Finish
 

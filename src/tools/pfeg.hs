@@ -112,8 +112,6 @@ main = (\m -> print m >> handle m) =<< cmdArgsRun mode
 
 {- END CMDARGS GIBBERISH -}
 
-type UnigramIDs = HashMap Text Int
-
 cacheHash :: Statement -> StateT UnigramIDs IO ()
 cacheHash s = liftIO (void $ execute s []) >> fetchAll
     where fetchAll = do
@@ -124,20 +122,6 @@ cacheHash s = liftIO (void $ execute s []) >> fetchAll
                                    fetchAll
                Nothing       -> return ()
                _             -> fail "Malformed result in unigrams."
-
-data CommonStruct = CommonStruct
-    { cCorpus :: FilePath
-    , cUnigramIds :: UnigramIDs
-    , cDatabase :: Connection
-    , cShard :: Int
-    , cStatusVar :: MVar LogMessage
-    , cTerm :: TerminalHandle }
-
-data LogMessage = Done
-                | Start { message :: String }
-                | Message { message :: String }
-                | Progress { progress :: Maybe Double }
-                | Finish
 
 data LogState = LogState { lastStart :: UTCTime
                          , lastMessg :: String }
