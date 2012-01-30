@@ -2,7 +2,6 @@ module PFEG.Types
     ( Wordcounts
     , Word
     , Sentence
-    , Configuration(..)
     , Table
     , TableAccess(..)
     , Target
@@ -19,12 +18,6 @@ data TableAccess = Access { connection :: Connection, table :: Table }
 type Wordcounts = T.HashMap X.Text Int
 type Word a = (a,a,a)
 type Sentence a = [Word a]
-
-data Configuration = Config { lemmaTable   :: String
-                            , posTable     :: String
-                            , contextTable :: String
-                            , unigramTable :: String
-                            , targets      :: [String] }
 
 type Table = String
 

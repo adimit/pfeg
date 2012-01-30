@@ -7,6 +7,7 @@ import PFEG.Common
 import PFEG.Context
 
 import System.Time.Utils (renderSecs)
+import Data.List.Split (splitOn)
 
 import qualified Data.Iteratee as I
 import Data.Iteratee (Iteratee)
@@ -47,32 +48,37 @@ data PFEGMain = Record { corpus    :: FilePath
                        , unigrams  :: FilePath
                        , database  :: FilePath
                        , sqlLog    :: Maybe FilePath
+                       , targets   :: String
                        , shard     :: Int }
               | Match  { corpus    :: FilePath
                        , unigrams  :: FilePath
                        , database  :: FilePath
                        , sqlLog    :: Maybe FilePath
+                       , targets   :: String
                        , shard     :: Int
                        , resultLog :: FilePath }
               deriving (Data, Typeable)
 
 instance Show PFEGMain where
-    show (Record c u db sql i)  = standardMessage "Recording to" c u db sql i ""
-    show (Match  c u db sql i r) = standardMessage "Matching aigainst" c u db sql i ("Logging result to '" ++ r ++ "'")
+    show (Record c u db sql ts i)   = standardMessage "Recording to" c u db sql ts i ""
+    show (Match  c u db sql ts i r) = standardMessage "Matching aigainst" c u db sql ts i ("Logging result to '" ++ r ++ "'")
 
-standardMessage :: String -> FilePath -> FilePath -> FilePath -> Maybe FilePath -> Int -> String -> String
-standardMessage m c u db sql i r = m ++ " '" ++ db ++ "'\n" ++
-                                   "from corpus '" ++ c ++ "', shard " ++ show i ++ ".\n" ++
-                                   "unigrams are '" ++ u ++ "'\n" ++ r ++ "\n" ++
-                                   case sql of
-                                        Nothing  -> ""
-                                        (Just x) -> "Logging SQL to '" ++ x ++ "'.\n"
+standardMessage :: String -> FilePath -> FilePath -> FilePath ->
+                  Maybe FilePath -> String -> Int -> String -> String
+standardMessage m c u db sql ts i r = m ++ " '" ++ db ++ "'\n" ++
+                                      "from corpus '" ++ c ++ "', shard " ++ show i ++ ".\n" ++
+                                      "unigrams are '" ++ u ++ "'\n" ++ r ++ "\n" ++
+                                      "targets are '" ++ show ts ++ "'\n" ++
+                                      case sql of
+                                           Nothing  -> ""
+                                           (Just x) -> "Logging SQL to '" ++ x ++ "'.\n"
 
 recordCmd, matchCmd :: PFEGMain
 recordCmd = Record { corpus    = commonCorpus def
                    , unigrams  = commonUnigrams "../db/de/uni.db"
                    , database  = commonDatabase "../db/de/ctx.db"
                    , sqlLog    = commonSqlLog def
+                   , targets   = commonTargets
                    , shard     = commonShard 1 }
                               &= help "Learn contexts from corpus and store in DB."
 
@@ -80,9 +86,13 @@ matchCmd  = Match  { corpus    = commonCorpus def
                    , unigrams  = commonUnigrams "../db/de/uni.db"
                    , database  = commonDatabase "../db/de/ctx.db"
                    , sqlLog    = commonSqlLog def
+                   , targets   = commonTargets
                    , shard     = commonShard def
                    , resultLog = "result.log" &= typ "FILE" &= help "Result log file location."}
                               &= help "Match context from corpus against DB."
+
+commonTargets = "in,von,mit,für,im,auf,nach,an,aus,am"
+    &= typ "TARGETLIST" &= help "Comma-separated list of targets, e.g 'in,von,mit…'"
 
 commonShard, commonCorpus, commonUnigrams, commonDatabase, commonSqlLog :: Data v => v -> v
 commonCorpus   x = x &= typ "FILE" &= help "Input corpus in TT format."
@@ -158,7 +168,7 @@ countChunksI' log = I.liftI (step 0)
           step _    stream    = I.idone () stream
 
 handle :: PFEGMain -> IO ()
-handle (Record c u db _sql i) =
+handle (Record c u db _sql ts i) =
     bracket (do session <- initCommon c u db i
                 hide_cursor (cTerm session)
                 return session)
@@ -179,21 +189,23 @@ handle (Record c u db _sql i) =
                 let sql = RecordSQL { updateTarget  = updateS
                                     , insertContext = insertCtxtS
                                     , insertTarget  = insertTrgtS }
+                    targets = map (T.strip.T.pack) $ splitOn "," ts
 
                 runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
                     [ countChunksI' logVar
-                    , I.joinI $ I.convStream corpusI (mainI (recordF sql))])) session
+                    , I.joinI $ I.convStream corpusI (mainI (recordF sql) targets)])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
                 putStrLn "Done.")
 
-handle (Match  c u db _sql i _r) = do
+handle (Match  c u db _sql _ts i _r) = do
     _cs <- initCommon c u db i
     return ()
 
-mainI :: (Item Text -> ReaderT CommonStruct IO ()) -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-mainI f = I.mapChunksM_ $ mapM f.getItems
+mainI :: (Item Text -> ReaderT CommonStruct IO ()) -> [Text]
+        -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
+mainI f targets = I.mapChunksM_ $ mapM f.getItems targets
 
 recordF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
 recordF sql i = do cf <- ask

@@ -2,10 +2,6 @@
 module PFEG.Common
     ( -- * Types
       Wordcounts
-      -- * Configuration
-    , Configuration(..)
-    , standardConfig
-    , targets'
       -- * Measuring execution times and logging
     , doTimed
     , doTimed_
@@ -53,17 +49,6 @@ import GHC.IO.Handle.FD (stdout)
 
 chunk_size :: Int
 chunk_size = (1024 :: Int) ^ (2 :: Int)
-
-standardConfig :: Configuration
-standardConfig = Config { lemmaTable   = "lemmas"
-                        , posTable     = "pos"
-                        , contextTable = "context7"
-                        , unigramTable = "unigrams"
-                        , targets      = [ "in" , "von" , "mit", "für", "im"
-                                         , "auf", "nach", "an" , "aus", "am"] }
-
-targets' :: [Text]
-targets' = map X.pack $ targets standardConfig
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do

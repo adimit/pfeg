@@ -32,10 +32,10 @@ data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
                    } deriving (Functor,Foldable,Traversable,Show)
 
 -- | Get all items in a text
-getItems :: Sentence Text -> [Item Text]
-getItems s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s -- punctuation is tagged starting with $.
-                 target_indices = findIndices (\(w,_,_) -> w `elem` targets') s_no_punct
-             in  map (getItem s_no_punct) target_indices
+getItems :: [Text] -> Sentence Text -> [Item Text]
+getItems t s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s -- punctuation is tagged starting with $.
+                   target_indices = findIndices (\(w,_,_) -> w `elem` t) s_no_punct
+               in  map (getItem s_no_punct) target_indices
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
