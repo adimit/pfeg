@@ -173,11 +173,11 @@ handle (Record c u db _sql ts i) =
                 let sql = RecordSQL { updateTarget  = updateS
                                     , insertContext = insertCtxtS
                                     , insertTarget  = insertTrgtS }
-                    targets = map (T.strip.T.pack) $ splitOn "," ts
+                    ts' = map (T.strip.T.pack) $ splitOn "," ts
 
                 runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
                     [ countChunksI' logVar
-                    , I.joinI $ I.convStream corpusI (mainI (recordF sql) targets)])) session
+                    , I.joinI $ I.convStream corpusI (mainI (recordF sql) ts')])) session
 
                 putStrLn "Committing…"
                 doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
@@ -189,7 +189,7 @@ handle (Match  c u db _sql _ts i _r) = do
 
 mainI :: (Item Text -> ReaderT CommonStruct IO ()) -> [Text]
         -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-mainI f targets = I.mapChunksM_ $ mapM f.getItems targets
+mainI f ts = I.mapChunksM_ $ mapM f.getItems ts
 
 recordF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
 recordF sql i = do cf <- ask
