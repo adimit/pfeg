@@ -6,11 +6,12 @@ import PFEG.Types
 import PFEG.Common
 import PFEG.Context
 
+import Prelude hiding (log)
+
 import System.Time.Utils (renderSecs)
 import Data.List.Split (splitOn)
 
 import qualified Data.Iteratee as I
-import Data.Iteratee (Iteratee)
 import Data.Iteratee.IO
 import Data.Iteratee.Base
 import Data.ByteString (ByteString)
@@ -21,19 +22,18 @@ import System.IO (hFileSize,withFile,IOMode(ReadMode))
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as M
-import Data.HashMap.Strict (HashMap)
 
 import Data.Time.Clock
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
-import Control.Concurrent (forkIO,threadDelay)
+import Control.Concurrent (forkIO)
 import Control.Exception (bracket)
 
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when,void,forever)
+import Control.Monad (when,void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -145,7 +145,7 @@ data SQL = RecordSQL { updateTarget  :: Statement
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
-countChunksI' :: Chan Int -> I.Iteratee ByteString (ReaderT CommonStruct IO) ()
+countChunksI' :: Chan Int -> Iteratee ByteString (ReaderT CommonStruct IO) ()
 countChunksI' log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
                                 in liftIO (writeChan log i') >> I.liftI (step i')
