@@ -205,29 +205,3 @@ recordF sql i = do cf <- ask
 matchF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
 matchF = undefined
 
-{-
-statusLog :: MVar LogMessage -> IO ()
-statusLog lv = do
-    t0 <- getCurrentTime
-    ls <- newEmptyMVar
-    void $ forkIO $ void $ evalStateT (forever $ l' ls) (LogState t0 "Initializing.")
-    where l :: MVar LogState -> IO ()
-          l ls = do curM <- takeMVar lv
-                    t <- getCurrentTime
-                    case curM of
-                         Start m    -> ls `putMVar` LogState t ("\nStart: " ++ m)
-                         Done       -> ls `putMVar` LogState t "\nDone."
-                         Message m  -> ls `putMVar` LogState t m
-                         Progress p -> undefined
-                         Finish     -> undefined
-          l' :: MVar LogState -> StateT LogState IO ()
-          l' ls = do maybeCurS <- liftIO $ tryTakeMVar ls
-                     case maybeCurS of
-                          Nothing -> do
-                              t' <- liftIO getCurrentTime
-                              (LogState t m) <- get
-                              let s = renderSecs.round $ t' `diffUTCTime` t
-                              liftIO $ putStr ("\r" ++ m ++ " (" ++ s ++ ")") >> threadDelay 300000
-                          Just curS@(LogState _t m) -> liftIO (putStr m) >> put curS
--}
-
