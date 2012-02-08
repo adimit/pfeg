@@ -3,16 +3,19 @@ module PFEG.SQL
     ( contexts2SQL
     , item2SQL
     , item2SQL'
-    , item2SQLp
       -- * New SQL statements
     , matchSQL
     , updateSQL
     , insertCtxtSQL
     , insertTargetSQL
+      -- * matcher SQL helpers
+    , mkPattern
+    , item2SQLp
     ) where
 
 import Database.HDBC
 
+import PFEG.Common
 import PFEG.Context
 
 import Data.List (intercalate,intersperse)
@@ -50,7 +53,12 @@ mkPattern mm = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
           ms Nothing  = const Nothing
 
 item2SQLp :: (Convertible i SqlValue) => MatchPattern -> Item i -> [SqlValue]
-item2SQLp = undefined --similar to mkPatterN!
+item2SQLp mm (Item (Context pI) (Context lI) (Context sI) _t) =
+    map toSql $ catMaybes $ zipWith ms mm (zip3 pI lI sI)
+    where ms (Just P) = Just . fst3
+          ms (Just L) = Just . snd3
+          ms (Just S) = Just . trd3
+          ms Nothing  = const Nothing
 
 updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
 updateSQL = "UPDATE targets SET c=c+1 WHERE i==? AND t==? AND id="++selectSubquerySQL
