@@ -60,8 +60,10 @@ data PFEGMain = Record { corpus    :: FilePath
               deriving (Data, Typeable)
 
 instance Show PFEGMain where
-    show (Record c u db sql ts i)   = standardMessage "Recording to" c u db sql ts i ""
-    show (Match  c u db sql ts i r) = standardMessage "Matching aigainst" c u db sql ts i ("Logging result to '" ++ r ++ "'")
+    show (Record c u db sql ts i) =
+        standardMessage "Recording to" c u db sql ts i ""
+    show (Match  c u db sql ts i r) =
+        standardMessage "Matching aigainst" c u db sql ts i ("Logging result to '" ++ r ++ "'")
 
 standardMessage :: String -> FilePath -> FilePath -> FilePath ->
                   Maybe FilePath -> String -> Int -> String -> String
