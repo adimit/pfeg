@@ -23,6 +23,9 @@ module PFEG.Common
     , UnigramIDs
     , CommonStruct(..)
     , LogMessage(..)
+      -- * types
+    , MatchMode(..)
+    , MatchPattern(..)
     ) where
 
 import PFEG.Types
@@ -55,6 +58,9 @@ import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
+
+data MatchMode = P | L | S deriving Show
+newtype MatchPattern = MatchPattern { unMatchPattern :: [Maybe MatchMode] }
 
 chunk_size :: Int
 chunk_size = (1024 :: Int) ^ (2 :: Int)

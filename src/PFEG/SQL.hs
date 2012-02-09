@@ -9,7 +9,7 @@ module PFEG.SQL
     , insertCtxtSQL
     , insertTargetSQL
       -- * matcher SQL helpers
-    , mkPattern
+    , mkMatchSQL
     , item2SQLp
     ) where
 
@@ -37,15 +37,15 @@ CREATE TABLE targets (id integer, t integer, c integer, i integer, primary key(i
 
  -}
 
-data MatchMode = P | L | S deriving Show
-type MatchPattern = [Maybe MatchMode]
+mkMatchSQL :: Int -> MatchPattern -> String
+mkMatchSQL i mm = matchSQL i (mkPattern mm)
 
 matchSQL :: Int -> String -> String
 matchSQL i p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM target,ctxt WHERE ctxt.id==target.id AND "
     ++ "i <> " ++ show i ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
 
 mkPattern :: MatchPattern -> String
-mkPattern mm = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
+mkPattern (MatchPattern mm) = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
     where f c n       = Just $ c:show n ++ "==?"
           ms (Just P) = f 'p'
           ms (Just L) = f 'l'
@@ -53,7 +53,7 @@ mkPattern mm = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
           ms Nothing  = const Nothing
 
 item2SQLp :: (Convertible i SqlValue) => MatchPattern -> Item i -> [SqlValue]
-item2SQLp mm (Item (Context pI) (Context lI) (Context sI) _t) =
+item2SQLp (MatchPattern mm) (Item (Context pI) (Context lI) (Context sI) _t) =
     map toSql $ catMaybes $ zipWith ms mm (zip3 pI lI sI)
     where ms (Just P) = Just . fst3
           ms (Just L) = Just . snd3
