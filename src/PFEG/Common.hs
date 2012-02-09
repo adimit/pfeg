@@ -62,6 +62,9 @@ import GHC.IO.Handle.FD (stdout)
 data MatchMode = P | L | S deriving Show
 newtype MatchPattern = MatchPattern { unMatchPattern :: [Maybe MatchMode] }
 
+instance Show MatchPattern where
+    show = Prelude.take 6.concatMap (maybe "_" show).(++ repeat Nothing).unMatchPattern
+
 chunk_size :: Int
 chunk_size = (1024 :: Int) ^ (2 :: Int)
 
