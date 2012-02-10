@@ -70,7 +70,7 @@ In some cases, it might not even be inferable from context \textit{which exact}
 preposition to use, since the right choice would not contribute to the
 narrative. SOMEBODY % FIXME: Was it tetreault? Gamon?
 cites an inter-annotator agreement study where two humans could only achieve a
-VERY LOW FIGURE. % FIXME: Yeah, this has to be filled in.
+RATHER LOW FIGURE. % FIXME: Yeah, this has to be filled in.
 This leads us to believe that singleton preposition predictions might not always
 be advisable, and that some contexts, such as the one in~\ref{ex:keys} call for
 the prediction of \textit{equivalence classes} of prepositions.
@@ -83,9 +83,9 @@ The databases are populated with context information gathered from the
 part-of-speech tagged DEWAC corpus \citep{baroniETAL2008}. The corpus represents
 a sample of the German Internet-landscape and has a total size of ABSURDLY HIGH
 NUMBER. % FIXME: measure the size in words and sentences.
-While the data in the DEWAC corpus can be noisy, the task has an immense need
-for data, to avoid sparsity problems, which justifies using the bigger DEWAC
-corpus over smaller higher-quality available corpora.
+While the data in the DEWAC corpus can be noisy, avoiding data sparsity
+problems seemed paramount, which justifies using the bigger DEWAC
+corpus over smaller, less noisy corpora.
 
 \subsection{Engineering the Software}
 The size of the corpus and the quality of its data pose some engineering
@@ -93,15 +93,15 @@ challenges that the software had to overcome. The exploratory nature of the
 research introduces a certain speed requirement to the training and testing
 tasks, since they had to be redone rather often.
 
+% FIXME: is this still true?
 Currently, a complete training run on the entire DEWAC corpus on recent hardware
 takes around two days.  The resulting data size is close to the original size of
 the corpus (around 20 GiB.) What constricts the processing speed is mostly hard
 drive access, since the databases can grow rather large.
 
-The database back end currently in use is
-SQLite\footnote{\url{http://www.sqlite.org}}, which was chosen for its
-simplicity and good performance in insertion and lookup. The software is written
-completely in the highly parallelizable functional programming language
+The database used is SQLite\footnote{\url{http://www.sqlite.org}}, which was chosen for its
+simplicity and relatively good performance. The software is written
+in the highly parallelizable functional programming language
 Haskell\footnote{\url{http://www.haskell.org}} and is available under a BSD3
 license online\footnote{\url{http://github.com/adimit/PFEG}}.
 
@@ -114,8 +114,17 @@ features can improve accuracy.
 
 \subsection{Data Format}
 
-  This section describes the data format and matching algorithm, which are at
-  the heart of the project.
+The context database is made up of two relations in Boyce-Codd Normal Form,
+which are typically joined for most tasks. Both relations use integer values
+exclusively, since database performance was observed to drop rapidly once
+strings were inserted in large quantities.
+
+\begin{figure}
+ctxt id s1 s2 s3 s4 s5 s6 l1 l2 l3 l4 l5 l6 p1 p2 p3 p4 p5 p6
+
+target id c i t
+\caption{Database schema.}
+\end{figure}
 
 \subsubsection{Recording}
 
