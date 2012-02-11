@@ -2,7 +2,6 @@
 module PFEG.SQL
     ( contexts2SQL
     , item2SQL
-    , item2SQL'
       -- * New SQL statements
     , matchSQL
     , updateSQL
@@ -77,14 +76,10 @@ letters c = map ((c:) . show)
 questionmarks :: Int -> String
 questionmarks range = intersperse ',' $ replicate range '?'
 
--- Convert an item's payload to @SqlValue@ _without_ the target prepended.
+-- Convert an item's payload to @SqlValue@ *without* the target prepended.
 item2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 item2SQL (Item (Context ps) (Context ls) (Context ss) _t) =
     map toSql ss ++ map toSql ls ++ map toSql ps
-
--- Convert an item's payload to @SqlValue@ _with_ the target prepended.
-item2SQL' :: (Convertible i SqlValue) => Item i -> [SqlValue]
-item2SQL' i@(Item _ _ _ t) = toSql t:item2SQL i
 
 contexts2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 contexts2SQL (Item (Context a) (Context b) (Context c) _t) =
