@@ -2,7 +2,6 @@
 module Main where
 
 import PFEG.SQL
-import PFEG.Types
 import PFEG.Common
 import PFEG.Context
 
@@ -10,18 +9,23 @@ import Prelude hiding (log)
 
 import System.Time.Utils (renderSecs)
 import Data.List.Split (splitOn)
+import Data.List (intercalate)
+
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IM
 
 import qualified Data.Iteratee as I
 import Data.Iteratee.IO
 import Data.Iteratee.Base
 import Data.ByteString (ByteString)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (mapMaybe,fromMaybe)
 
-import System.IO (hFileSize,withFile,IOMode(ReadMode))
+import System.IO
 
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as M
+import Data.HashMap.Strict (HashMap)
 
 import Data.Time.Clock
 
@@ -33,7 +37,7 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when,void)
+import Control.Monad (forever,liftM,foldM,when,void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -42,7 +46,7 @@ import System.Console.CmdArgs
 
 import Graphics.Vty.Terminal
 
-
+type PFEG a = ReaderT PFEGConfig IO a
 data PFEGConfig = PFEGConfig
     { cUnigramIds :: UnigramIDs
     , cTargetIds  :: IntMap Text
@@ -61,7 +65,8 @@ data PFEGMain = Record { corpus    :: FilePath
                        , database  :: FilePath
                        , sqlLog    :: Maybe FilePath
                        , targets   :: String
-                       , shard     :: Int }
+                       , shard     :: Int
+                       , resultLog :: FilePath }
               | Match  { corpus    :: FilePath
                        , unigrams  :: FilePath
                        , database  :: FilePath
@@ -72,7 +77,7 @@ data PFEGMain = Record { corpus    :: FilePath
               deriving (Data, Typeable)
 
 instance Show PFEGMain where
-    show (Record c u db sql ts i) =
+    show (Record c u db sql ts i _r) =
         standardMessage "Recording to" c u db sql ts i ""
     show (Match  c u db sql ts i r) =
         standardMessage "Matching aigainst" c u db sql ts i ("Logging result to '" ++ r ++ "'")
@@ -93,7 +98,8 @@ recordCmd = Record { corpus    = commonCorpus def
                    , database  = commonDatabase "../db/de/ctx.db"
                    , sqlLog    = commonSqlLog def
                    , targets   = commonTargets
-                   , shard     = commonShard 1 }
+                   , shard     = commonShard 1 
+                   , resultLog = def &= typ "FILE" &= help "Log results to"}
                               &= help "Learn contexts from corpus and store in DB."
 
 matchCmd  = Match  { corpus    = commonCorpus def
@@ -131,26 +137,12 @@ cacheHash s = liftIO (void $ execute s []) >> fetchAll
     where fetchAll = do
           row <- liftIO $ fetchRow s
           case row of
-               Just (f:i:[]) -> do m <- get
-                                   put $! M.insert (fromSql f) (fromSql i) m
-                                   fetchAll
                Nothing       -> return ()
+               Just (f:i:[]) -> do
+                   m <- get
+                   put $! M.insert (fromSql f) (fromSql i) m
+                   fetchAll
                _             -> fail "Malformed result in unigrams."
-
-data LogState = LogState { lastStart :: UTCTime
-                         , lastMessg :: String }
-
-initCommon :: FilePath -> FilePath -> FilePath -> Int -> IO CommonStruct
-initCommon c u db i = do putStrLn "Initializing."
-                         sv' <- newEmptyMVar
-                         cu' <- connectSqlite3 u
-                         cdb' <- connectSqlite3 db
-                         s <- prepare cu' "SELECT f,id FROM unigrams"
-                         uids' <- execStateT (cacheHash s) M.empty
-                         disconnect cu'
-                         putStrLn "Done."
-                         t <- terminal_handle
-                         return $ CommonStruct c uids' cdb' i sv' t
 
 data SQL = RecordSQL { updateTarget  :: Statement
                      , insertContext :: Statement
@@ -159,61 +151,136 @@ data SQL = RecordSQL { updateTarget  :: Statement
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
-countChunksI' :: Chan Int -> Iteratee ByteString (ReaderT CommonStruct IO) ()
+countChunksI' :: Chan Int -> Iteratee ByteString (ReaderT PFEGConfig IO) ()
 countChunksI' log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
                                 in liftIO (writeChan log i') >> I.liftI (step i')
           step _    stream    = I.idone () stream
 
-handle :: PFEGMain -> IO ()
-handle (Record c u db _sql ts i) =
-    bracket (do session <- initCommon c u db i
-                hide_cursor (cTerm session)
-                return session)
-            (\session -> do
-                putStrLn "Disconnecting…"
-                disconnect (cDatabase session)
-                show_cursor (cTerm session))
-            (\session -> do
-                insertCtxtS <- prepare (cDatabase session) insertCtxtSQL
-                insertTrgtS <- prepare (cDatabase session) insertTargetSQL
-                updateS     <- prepare (cDatabase session) updateSQL
+data LogState = LogState { currentItem :: Int }
 
+logResult :: Handle -> MVar LogData -> StateT LogState IO ()
+logResult h resV = forever log -- who wants to be forever log
+    where log = do (LogState n) <- get
+                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show >> hFlush h
+                   put (LogState $ n+1)
+
+-- Mode-independent common initialization and cleanup code
+handle :: PFEGMain -> IO ()
+handle m =
+    bracket (do putStrLn "Initializing."
+                sv   <- newEmptyMVar
+                cdb  <- connectSqlite3 (database m)
+                cu   <- connectSqlite3 (unigrams m)
+                s    <- prepare cu "SELECT f,id FROM unigrams"
+                uids <- execStateT (cacheHash s) M.empty
+                disconnect cu
+                putStrLn "Done."
+                terminal_handle >>= hide_cursor
+                lf <- openFile (resultLog m) AppendMode
+                let targets' = map (T.strip . T.pack) $ splitOn "," (targets m)
+                return PFEGConfig { cUnigramIds = uids
+                                    , cDatabase   = cdb
+                                    , cTargetIds  = mkTargetIds targets' uids
+                                    , cLogVar     = sv
+                                    , cLogFile    = lf })
+            (\session -> do
+                terminal_handle >>= show_cursor
+                putStrLn "Disconnecting…"
+                hClose (cLogFile session)
+                disconnect (cDatabase session))
+            (\session -> do
                 logVar <- newChan
                 t0     <- getCurrentTime
-                csize  <- withFile (cCorpus session) ReadMode hFileSize
-
+                csize  <- withFile (corpus m) ReadMode hFileSize
                 void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
-                let sql = RecordSQL { updateTarget  = updateS
-                                    , insertContext = insertCtxtS
-                                    , insertTarget  = insertTrgtS }
-                    ts' = map (T.strip.T.pack) $ splitOn "," ts
+                void $ forkIO (void $ runStateT
+                    (logResult (cLogFile session) (cLogVar session)) (LogState 1))
+                processor <- prepareProcessor m session
+                let targets' = map (T.strip . T.pack) $ splitOn "," (targets m)
+                    iteratee = I.run =<< enumFile chunk_size (corpus m) (I.sequence_
+                        [ countChunksI' logVar
+                        , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM processor.getItems targets')])
+                runReaderT iteratee session
+                putStr "\nCommitting…"
+                doTimed_ (commit $ cDatabase session) >>= putStrLn.("\rCommitted in "++).renderSecs.round)
 
-                runReaderT (I.run =<< enumFile chunk_size (cCorpus session) (I.sequence_
-                    [ countChunksI' logVar
-                    , I.joinI $ I.convStream corpusI (mainI (recordF sql) ts')])) session
+mkTargetIds :: [Text] -> UnigramIDs -> IntMap Text
+mkTargetIds ts uids = IM.fromList $ zip (mapMaybe (`M.lookup` uids) ts) ts
 
-                putStrLn "Committing…"
-                doTimed_ (commit $ cDatabase session) >>= putStrLn.("Took "++).renderSecs.round
-                putStrLn "Done.")
+type ItemProcessor = Item Text -> PFEG ()
 
-handle (Match  c u db _sql _ts i _r) = do
-    _cs <- initCommon c u db i
-    return ()
+-- Prepare SQL, assemble the @ItemProcessor@ depending on which mode we're in.
+prepareProcessor :: PFEGMain -> PFEGConfig -> IO ItemProcessor
+prepareProcessor m@(Record _ _ _ _ _ _ _) session = do
+    insertCtxtS <- prepare (cDatabase session) insertCtxtSQL
+    insertTrgtS <- prepare (cDatabase session) insertTargetSQL
+    updateS     <- prepare (cDatabase session) updateSQL
+    let sql = RecordSQL { updateTarget  = updateS
+                        , insertContext = insertCtxtS
+                        , insertTarget  = insertTrgtS }
+    return $ recordF (shard m) sql
+prepareProcessor m@(Match _ _ _ _ _ _ _) session = do
+    sql <- precompileSQL (mkMatchSQL $ shard m) (cDatabase session) matchmodes
+    return $ matchF sql
 
-mainI :: (Item Text -> ReaderT CommonStruct IO ()) -> [Text]
-        -> Iteratee (Sentence Text) (ReaderT CommonStruct IO) ()
-mainI f ts = I.mapChunksM_ $ mapM f.getItems ts
+matchF :: MatcherInit -> Item Text -> PFEG ()
+matchF sql i = do
+    cf <- ask
+    results <- mapM (matchAPattern sql i) matchmodes
+    liftIO $ putMVar (cLogVar cf) (LogData i (zip matchmodes results))
 
-recordF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
-recordF sql i = do cf <- ask
-                   let pattern  = item2SQL $ indexItem (cUnigramIds cf) i
-                       pattern' = toSql (cShard cf):toSql (target i):pattern
-                   numRows <- liftIO $ execute (updateTarget sql) pattern'
-                   when (numRows == 0) (do
-                        void.liftIO $ execute (insertContext sql) pattern
-                        void.liftIO $ execute (insertTarget  sql) pattern')
+-- given a pattern, matcherInit and an Item, give a result from the database
+-- helper function for @matchF@.
+matchAPattern :: MatcherInit -> Item Text -> MatchPattern -> PFEG Result
+matchAPattern sql i mm = do
+    cf <- ask
+    let pattern = item2SQLp mm (indexItem (cUnigramIds cf) i)
+    case mm `M.lookup` sql of
+         Nothing -> error "IMPOSSIBRU!"
+         (Just s) -> do
+             void $ liftIO $ execute s pattern
+             rows <- liftIO $ fetchAllRows' s
+             return $ foldl f [] rows
+             where f r (t:c:idc:[]) = (cTargetIds cf IM.! fromSql t,fromSql c,fromSql idc):r
+                   f _ xs           = error $ "Unexpected data format." ++ show xs
 
-matchF :: SQL -> Item Text -> ReaderT CommonStruct IO ()
-matchF = undefined
+recordF :: Int -> SQL -> Item Text -> PFEG ()
+recordF shrd sql i = do
+    cf <- ask
+    let item'    = indexItem (cUnigramIds cf) i
+        pattern  = item2SQL item' -- just the slp forms
+        pattern' = toSql shrd:toSql (target item'):pattern -- the slp forms with target and shard prepended
+    numRows <- liftIO $ execute (updateTarget sql) pattern'
+    when (numRows == 0) (do
+         void.liftIO $ execute (insertContext sql) pattern
+         void.liftIO $ execute (insertTarget  sql) pattern')
 
+-- FIXME: this needs a pretty printer
+instance Show LogData where
+    show (LogData (Item _ _ (Context s) t) lr) = intercalate " | " (map T.unpack s) ++ "\nActual: " ++ T.unpack t
+        ++ "\n" ++ concatMap (\(mm,r) -> show mm ++ ": " ++ show r ++ "\n") lr
+
+-- | list of possible predictions with associated counts and matches.
+-- (target,count,amount_of_matches)
+type Result = [(Text,Int,Int)]
+
+-- | Map from @MatchPattern@s to SQL @Statement@s for the matcher.
+type MatcherInit = HashMap MatchPattern Statement
+
+precompileSQL :: (MatchPattern -> String) -> Connection -> [MatchPattern] -> IO MatcherInit
+precompileSQL sqlMM conn = foldM f M.empty
+    where f m mm = liftM (\s -> M.insert mm s m) (prepare conn (sqlMM mm))
+
+-- preliminary list of matchmodes
+matchmodes :: [MatchPattern]
+matchmodes = map MatchPattern
+             [ map Just [S,S,S,S,S,S]
+             , map Just [L,L,L,L,L,L]
+             , map Just [P,P,P,P,P,P]
+             , Nothing : map Just [S,S,S,S]
+             , Nothing : map Just [L,L,L,L]
+             , Nothing : map Just [P,P,P,P]
+             , Nothing : Nothing : map Just [S,S]
+             , Nothing : Nothing : map Just [L,L]
+             , Nothing : Nothing : map Just [P,P] ]
