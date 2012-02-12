@@ -42,6 +42,18 @@ import System.Console.CmdArgs
 
 import Graphics.Vty.Terminal
 
+
+data PFEGConfig = PFEGConfig
+    { cUnigramIds :: UnigramIDs
+    , cTargetIds  :: IntMap Text
+    , cDatabase :: Connection
+    , cLogVar  :: MVar LogData
+    , cLogFile :: Handle }
+
+data LogData = LogData
+    { logItem    :: Item Text
+    , logResults :: [(MatchPattern,Result)] }
+
 {- START CMDARGS GIBBERISH -}
 
 data PFEGMain = Record { corpus    :: FilePath
