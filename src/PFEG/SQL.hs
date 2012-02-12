@@ -40,7 +40,7 @@ mkMatchSQL :: Int -> MatchPattern -> String
 mkMatchSQL i mm = matchSQL i (mkPattern mm)
 
 matchSQL :: Int -> String -> String
-matchSQL i p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM target,ctxt WHERE ctxt.id==target.id AND "
+matchSQL i p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM targets,ctxt WHERE ctxt.id==targets.id AND "
     ++ "i <> " ++ show i ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
 
 mkPattern :: MatchPattern -> String
