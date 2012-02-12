@@ -65,27 +65,25 @@ data PFEGMain = Record { corpus    :: FilePath
                        , database  :: FilePath
                        , sqlLog    :: Maybe FilePath
                        , targets   :: String
-                       , shard     :: Int
                        , resultLog :: FilePath }
               | Match  { corpus    :: FilePath
                        , unigrams  :: FilePath
                        , database  :: FilePath
                        , sqlLog    :: Maybe FilePath
                        , targets   :: String
-                       , shard     :: Int
                        , resultLog :: FilePath }
               deriving (Data, Typeable)
 
 instance Show PFEGMain where
-    show (Record c u db sql ts i _r) =
-        standardMessage "Recording to" c u db sql ts i ""
-    show (Match  c u db sql ts i r) =
-        standardMessage "Matching aigainst" c u db sql ts i ("Logging result to '" ++ r ++ "'")
+    show (Record c u db sql ts _r) =
+        standardMessage "Recording to" c u db sql ts ""
+    show (Match  c u db sql ts r) =
+        standardMessage "Matching aigainst" c u db sql ts ("Logging result to '" ++ r ++ "'")
 
 standardMessage :: String -> FilePath -> FilePath -> FilePath ->
-                  Maybe FilePath -> String -> Int -> String -> String
-standardMessage m c u db sql ts i r = m ++ " '" ++ db ++ "'\n" ++
-                                      "from corpus '" ++ c ++ "', shard " ++ show i ++ ".\n" ++
+                  Maybe FilePath -> String -> String -> String
+standardMessage m c u db sql ts r = m ++ " '" ++ db ++ "'\n" ++
+                                      "from corpus '" ++ c ++ "'.\n" ++
                                       "unigrams are '" ++ u ++ "'\n" ++ r ++ "\n" ++
                                       "targets are '" ++ show ts ++ "'\n" ++
                                       case sql of
@@ -98,7 +96,6 @@ recordCmd = Record { corpus    = commonCorpus def
                    , database  = commonDatabase "../db/de/ctx.db"
                    , sqlLog    = commonSqlLog def
                    , targets   = commonTargets
-                   , shard     = commonShard 1 
                    , resultLog = def &= typ "FILE" &= help "Log results to"}
                               &= help "Learn contexts from corpus and store in DB."
 
@@ -107,18 +104,16 @@ matchCmd  = Match  { corpus    = commonCorpus def
                    , database  = commonDatabase "../db/de/ctx.db"
                    , sqlLog    = commonSqlLog def
                    , targets   = commonTargets
-                   , shard     = commonShard def
                    , resultLog = "result.log" &= typ "FILE" &= help "Result log file location."}
                               &= help "Match context from corpus against DB."
 
 commonTargets = "in,von,mit,für,im,auf,nach,an,aus,am"
     &= typ "TARGETLIST" &= help "Comma-separated list of targets, e.g 'in,von,mit…'"
 
-commonShard, commonCorpus, commonUnigrams, commonDatabase, commonSqlLog :: Data v => v -> v
+commonCorpus, commonUnigrams, commonDatabase, commonSqlLog :: Data v => v -> v
 commonCorpus   x = x &= typ "FILE" &= help "Input corpus in TT format."
 commonUnigrams x = x &= typ "FILE" &= help "Location of the unigram index database."
 commonDatabase x = x &= typ "FILE" &= help "Location of the Context database."
-commonShard    x = x &= typ "INT"  &= help "Index of the current shard."
 commonSqlLog   x = x &= typ "FILE" &= help "Output of SQL log, if desired."
 
 mode :: Mode (CmdArgs PFEGMain)
@@ -212,16 +207,16 @@ type ItemProcessor = Item Text -> PFEG ()
 
 -- Prepare SQL, assemble the @ItemProcessor@ depending on which mode we're in.
 prepareProcessor :: PFEGMain -> PFEGConfig -> IO ItemProcessor
-prepareProcessor m@(Record _ _ _ _ _ _ _) session = do
+prepareProcessor (Record _ _  _ _ _ _) session = do
     insertCtxtS <- prepare (cDatabase session) insertCtxtSQL
     insertTrgtS <- prepare (cDatabase session) insertTargetSQL
     updateS     <- prepare (cDatabase session) updateSQL
     let sql = RecordSQL { updateTarget  = updateS
                         , insertContext = insertCtxtS
                         , insertTarget  = insertTrgtS }
-    return $ recordF (shard m) sql
-prepareProcessor m@(Match _ _ _ _ _ _ _) session = do
-    sql <- precompileSQL (mkMatchSQL $ shard m) (cDatabase session) matchmodes
+    return $ recordF sql
+prepareProcessor (Match _ _ _ _ _ _) session = do
+    sql <- precompileSQL mkMatchSQL (cDatabase session) matchmodes
     return $ matchF sql
 
 matchF :: MatcherInit -> Item Text -> PFEG ()
@@ -245,12 +240,12 @@ matchAPattern sql i mm = do
              where f r (t:c:idc:[]) = (cTargetIds cf IM.! fromSql t,fromSql c,fromSql idc):r
                    f _ xs           = error $ "Unexpected data format." ++ show xs
 
-recordF :: Int -> SQL -> Item Text -> PFEG ()
-recordF shrd sql i = do
+recordF :: SQL -> Item Text -> PFEG ()
+recordF sql i = do
     cf <- ask
     let item'    = indexItem (cUnigramIds cf) i
         pattern  = item2SQL item' -- just the slp forms
-        pattern' = toSql shrd:toSql (target item'):pattern -- the slp forms with target and shard prepended
+        pattern' = toSql (target item'):pattern -- the slp forms with target prepended
     numRows <- liftIO $ execute (updateTarget sql) pattern'
     when (numRows == 0) (do
          void.liftIO $ execute (insertContext sql) pattern

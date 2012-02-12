@@ -32,16 +32,16 @@ integer,l4 integer,l5 integer,l6 integer,p1 integer,p2 integer,p3 integer,p4
 integer,p5 integer,p6 integer,
 UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
 
-CREATE TABLE targets (id integer, t integer, c integer, i integer, primary key(id,t,i));
+CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
 
  -}
 
-mkMatchSQL :: Int -> MatchPattern -> String
-mkMatchSQL i mm = matchSQL i (mkPattern mm)
+mkMatchSQL :: MatchPattern -> String
+mkMatchSQL mm = matchSQL (mkPattern mm)
 
-matchSQL :: Int -> String -> String
-matchSQL i p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM targets,ctxt WHERE ctxt.id==targets.id AND "
-    ++ "i <> " ++ show i ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
+matchSQL :: String -> String
+matchSQL p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM targets,ctxt WHERE ctxt.id==targets.id AND "
+    ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
 
 mkPattern :: MatchPattern -> String
 mkPattern (MatchPattern mm) = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
@@ -60,10 +60,10 @@ item2SQLp (MatchPattern mm) (Item (Context pI) (Context lI) (Context sI) _t) =
           ms Nothing  = const Nothing
 
 updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
-updateSQL = "UPDATE targets SET c=c+1 WHERE i==? AND t==? AND id="++selectSubquerySQL
+updateSQL = "UPDATE targets SET c=c+1 WHERE t==? AND id="++selectSubquerySQL
 insertCtxtSQL = "INSERT or IGNORE INTO ctxt ("++contextNames++") VALUES ("++questionmarks 18++")"
     where contextNames = intercalate "," $ map (`commas` [1..6]) "slp"
-insertTargetSQL = "INSERT INTO targets (i,t,id,c) VALUES (?,?,"++selectSubquerySQL++",1)"
+insertTargetSQL = "INSERT INTO targets (t,id,c) VALUES (?,"++selectSubquerySQL++",1)"
 selectSubquerySQL = "(SELECT id FROM ctxt WHERE "++ cn ++")"
     where cn = intercalate " AND " $ map (\c -> intercalate " AND " $ map (++"==?") (letters c [1..6])) "slp"
 
