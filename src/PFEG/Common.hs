@@ -50,15 +50,26 @@ import Control.Applicative hiding (many)
 import Data.Word (Word8)
 
 import Prelude hiding (log)
+import Data.Bits
+import Data.Hashable
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
 
-data MatchMode = P | L | S deriving Show
-newtype MatchPattern = MatchPattern { unMatchPattern :: [Maybe MatchMode] }
+import Data.List (foldl')
+
+data MatchMode = P | L | S deriving (Show,Eq)
+newtype MatchPattern = MatchPattern { unMatchPattern :: [Maybe MatchMode] } deriving (Eq)
 
 instance Show MatchPattern where
     show = Prelude.take 6.concatMap (maybe "_" show).(++ repeat Nothing).unMatchPattern
+
+instance Hashable MatchPattern where
+    hash = foldl' f 1.unMatchPattern
+       where f x (Nothing) = shift x 2
+             f x (Just P ) = shift x 2 .|. 1
+             f x (Just L ) = shift x 2 .|. 2
+             f x (Just S ) = shift x 2 .|. 3
 
 chunk_size :: Int
 chunk_size = (1024 :: Int) ^ (2 :: Int)
