@@ -38,15 +38,17 @@ type Corpus = (Name,FilePath)
 type UnigramIDs = HashMap Text Int
 
 data PFEGConfig = PFEGConfig
-    { trainingC  :: [Corpus] -- ^ The training corpora
-    , testingC   :: [Corpus] -- ^ The testing corpora
+    { pfegMode   :: ModeConfig
     , unigramID  :: UnigramIDs -- ^ Unigram ids
-    , targetIDs  :: IntMap Text -- ^ Target ids, for re-translation.
     , contextDB  :: Connection -- ^ The connection to the main database
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
-    , resultLog  :: Maybe Handle -- ^ Handle to the result log (only used for matcher.)
     }
+
+data ModeConfig = Record { trainingC :: [Corpus] }
+                | Match  { testingC  :: [Corpus]
+                         , targetIDs :: IntMap Text
+                         , resultLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError)
@@ -58,8 +60,8 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
-    case resultLog pfeg of (Just handle) -> hClose handle
-                           (Nothing) -> return ()
+    case pfegMode pfeg of m@(Match _ _ _) -> hClose $ resultLog m
+                          (Record _)      -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
 configurePFEG :: Bool -> FilePath -> IO (Either ConfigError PFEGConfig)
@@ -75,18 +77,20 @@ initialize match cfg = do
     ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3 
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
-    train <- getCorpusSet cfg "main" "trainon"
-    test  <- getCorpusSet cfg "main" "teston"
-    resL  <- openHandle AppendMode cfg "main" "resultLog"
-    return PFEGConfig { trainingC = train
-                      , testingC  = test
+    runas <- if match
+               then (do test  <- getCorpusSet cfg "main" "teston"
+                        resL  <- openHandle AppendMode cfg "main" "resultLog"
+                        let tids = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
+                        return Match { testingC = test
+                                     , targetIDs = tids
+                                     , resultLog = resL })
+               else (do train <- getCorpusSet cfg "main" "trainon"
+                        return Record { trainingC = train })
+    return PFEGConfig { pfegMode  = runas
                       , unigramID = uids
-                      , targetIDs = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
                       , contextDB = ctxt
                       , targets   = targs
-                      , chunkSize = csize
-                      , resultLog = if match then Just resL
-                                             else Nothing }
+                      , chunkSize = csize }
 
 splitAndStrip :: String -> [Text]
 splitAndStrip = map (T.strip . T.pack) . splitOn ","
