@@ -1,37 +1,139 @@
-module PFEG.Configuration where
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module PFEG.Configuration
+    ( ConfigError
+    , PFEGConfig(..)
+    , configurePFEG
+    , deinitialize ) where
 
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IM
 import Data.Ini.Types
 import Data.Ini.Reader
 import Data.Ini
+import Database.HDBC
 import Database.HDBC.Sqlite3
 import Data.Text (Text)
-import System.IO (Handle)
+import qualified Data.Text as T
+import System.IO (hClose,openFile,IOMode(..),Handle)
 import Data.HashMap.Strict (HashMap)
-import Control.Monad (liftM)
+import qualified Data.HashMap.Strict as M
+import Control.Monad.Error
+import Control.Monad.Trans.State.Strict
+import Data.List.Split (splitOn)
+import Data.Maybe (mapMaybe)
+
+data ConfigError = IOError FilePath
+                 | OptionNotSet SectionName OptionName
+                 | SectionNotPresent SectionName
+                 | ParseError String
+                 | GenericError String
+                   deriving (Eq, Ord, Show)
+
+instance Error ConfigError where
+    noMsg  = GenericError "Oh shit!"
+    strMsg = GenericError
 
 type Name = String
 type Corpus = (Name,FilePath)
 type UnigramIDs = HashMap Text Int
 
 data PFEGConfig = PFEGConfig
-    { trainingC  :: [Corpus]
-    , testingC   :: [Corpus]
-    , unigramID  :: UnigramIDs
-    , contextDB  :: Connection
-    , targets    :: [Text]
-    , chunkSize  :: Int
-    , resultLog  :: Handle }
+    { trainingC  :: [Corpus] -- ^ The training corpora
+    , testingC   :: [Corpus] -- ^ The testing corpora
+    , unigramID  :: UnigramIDs -- ^ Unigram ids
+    , targetIDs  :: IntMap Text -- ^ Target ids, for re-translation.
+    , contextDB  :: Connection -- ^ The connection to the main database
+    , targets    :: [Text] -- ^ Targets for this run
+    , chunkSize  :: Int -- ^ Chunk size for the Iteratee
+    , resultLog  :: Maybe Handle -- ^ Handle to the result log (only used for matcher.)
+    }
 
-configurePFEG :: FilePath -> IO (Either String PFEGConfig)
-configurePFEG f = liftM parse (readFile f) >>= initialize
+newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
+                           deriving (Monad, MonadError ConfigError)
 
-initialize :: IniParseResult Config -> IO (Either String PFEGConfig)
-initialize (Right cfg) = do
-    contextDB' <- connectSqlite3 undefined
-    return undefined
-initialize (Left err) = return (Left $ show err)
+liftC :: IO a -> Configurator a
+liftC m = C (lift m)
 
-configOrDie :: Config -> SectionName -> OptionName -> String -> Either String OptionValue
-configOrDie cfg sec opt err = case getOption sec opt cfg of
-                                   (Just val) -> Right val
-                                   Nothing    -> Left err
+-- | Free all resources that were initialized earlier.
+deinitialize :: PFEGConfig -> IO ()
+deinitialize pfeg = do
+    disconnect $ contextDB pfeg
+    case resultLog pfeg of (Just handle) -> hClose handle
+                           (Nothing) -> return ()
+
+-- | Read configuration file and initialize all necessary data structures.
+configurePFEG :: Bool -> FilePath -> IO (Either ConfigError PFEGConfig)
+configurePFEG match f = do
+    parseResult <- liftM parse (readFile f)
+    case parseResult of
+         (Left err)  -> return . Left . ParseError $ show err
+         (Right cfg) -> runErrorT $ runC $ initialize match cfg
+
+initialize :: Bool -> Config -> Configurator PFEGConfig
+initialize match cfg = do
+    uids  <- prepareUnigrams cfg
+    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3 
+    csize <- readChunkSize cfg
+    targs <- liftM splitAndStrip (getValue cfg "main" "targets")
+    train <- getCorpusSet cfg "main" "trainon"
+    test  <- getCorpusSet cfg "main" "teston"
+    resL  <- openHandle AppendMode cfg "main" "resultLog"
+    return PFEGConfig { trainingC = train
+                      , testingC  = test
+                      , unigramID = uids
+                      , targetIDs = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
+                      , contextDB = ctxt
+                      , targets   = targs
+                      , chunkSize = csize
+                      , resultLog = if match then Just resL
+                                             else Nothing }
+
+splitAndStrip :: String -> [Text]
+splitAndStrip = map (T.strip . T.pack) . splitOn ","
+
+openHandle :: IOMode -> Config -> SectionName -> OptionName -> Configurator Handle
+openHandle mode cfg sec opt = do
+    fname <- getValue cfg sec opt
+    liftC $ openFile fname mode
+
+getCorpusSet :: Config -> SectionName -> OptionName -> Configurator [Corpus]
+getCorpusSet cfg sec opt = do
+    names <- liftM (map T.unpack . splitAndStrip) (getValue cfg sec opt)
+    corps <- mapM (getValue cfg "data") names
+    -- TODO: maybe we should check whether the corpora exist first.
+    return $ zip names corps
+
+readChunkSize :: Config -> Configurator Int
+readChunkSize cfg = do
+    val <- getValue cfg "main" "chunkSize"
+    case reads val of
+         [(i,"")] -> return i
+         _        -> throwError $ GenericError ("Unable to parse " ++ val ++ " as integer.")
+
+prepareUnigrams :: Config -> Configurator UnigramIDs
+prepareUnigrams cfg = do
+    val  <- getValue cfg "databases" "unigrams"
+    conn <- liftC $ connectSqlite3 val
+    stmt <- liftC $ prepare conn "SELECT f,id FROM unigrams"
+    uids <- liftC $ execStateT (cacheHash stmt) M.empty
+    liftC $ disconnect conn
+    return uids
+
+cacheHash :: Statement -> StateT UnigramIDs IO ()
+cacheHash s = liftIO (void $ execute s []) >> fetchAll
+    where fetchAll = do
+          row <- liftIO $ fetchRow s
+          case row of
+               Nothing       -> return ()
+               Just (f:i:[]) -> do
+                   m <- get
+                   put $! M.insert (fromSql f) (fromSql i) m
+                   fetchAll
+               _             -> fail "Malformed result in unigrams."
+
+getValue :: Config -> SectionName -> OptionName -> Configurator OptionValue
+getValue cfg sec opt | hasSection sec cfg = case getOption sec opt cfg of
+                               (Just val) -> return val
+                               Nothing    -> throwError $ OptionNotSet sec opt
+                     | otherwise          = throwError $ SectionNotPresent sec
+
