@@ -5,6 +5,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import Control.Concurrent.Chan
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 import Data.Ini.Types
@@ -40,6 +41,7 @@ type UnigramIDs = HashMap Text Int
 data PFEGConfig = PFEGConfig
     { pfegMode   :: ModeConfig
     , unigramID  :: UnigramIDs -- ^ Unigram ids
+    , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
@@ -77,6 +79,7 @@ initialize match cfg = do
     ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3 
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
+    statC <- liftC newChan
     runas <- if match
                then (do test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
@@ -86,11 +89,12 @@ initialize match cfg = do
                                      , resultLog = resL })
                else (do train <- getCorpusSet cfg "main" "trainon"
                         return Record { trainingC = train })
-    return PFEGConfig { pfegMode  = runas
-                      , unigramID = uids
-                      , contextDB = ctxt
-                      , targets   = targs
-                      , chunkSize = csize }
+    return PFEGConfig { pfegMode   = runas
+                      , unigramID  = uids
+                      , contextDB  = ctxt
+                      , statusLine = statC
+                      , targets    = targs
+                      , chunkSize  = csize }
 
 splitAndStrip :: String -> [Text]
 splitAndStrip = map (T.strip . T.pack) . splitOn ","
