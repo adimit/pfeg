@@ -2,6 +2,7 @@
 module PFEG.Configuration
     ( ConfigError
     , PFEGConfig(..)
+    , ModeConfig(..)
     , configurePFEG
     , deinitialize ) where
 
@@ -39,7 +40,7 @@ type Corpus = (Name,FilePath)
 type UnigramIDs = HashMap Text Int
 
 data PFEGConfig = PFEGConfig
-    { pfegMode   :: ModeConfig
+    { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
     , unigramID  :: UnigramIDs -- ^ Unigram ids
     , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
