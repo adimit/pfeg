@@ -8,7 +8,6 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import System.Time.Utils (renderSecs)
-import Data.List.Split (splitOn)
 import Data.List (intercalate)
 
 import Data.IntMap (IntMap)
@@ -18,7 +17,7 @@ import qualified Data.Iteratee as I
 import Data.Iteratee.IO
 import Data.Iteratee.Base
 import Data.ByteString (ByteString)
-import Data.Maybe (mapMaybe,fromMaybe)
+import Data.Maybe (fromMaybe)
 
 import System.IO
 
@@ -31,7 +30,7 @@ import Data.Time.Clock
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
-import Control.Concurrent (forkIO)
+import Control.Concurrent (killThread,forkIO)
 import Control.Exception (bracket)
 
 import Control.Monad.Trans.State.Strict
@@ -55,10 +54,21 @@ data LogData = LogData
 
 main :: IO ()
 main = do
-    (mode' :: String, configFile :: FilePath) <- readArgs
-    let mode = mode' == "match"
-    putStrLn "Initializing…"
-    handle mode configFile
+    (mode :: String, configFile :: FilePath) <- readArgs
+    bracket (do putStrLn "Initializing…"
+                terminal_handle >>= hide_cursor
+                configAttempt <- configurePFEG (mode == "match") configFile
+                case configAttempt of
+                     (Left err) -> error $ "Initialization failed: "++ show err
+                     (Right config) -> return config)
+            (\session -> do
+                putStrLn "Shutting down…"
+                terminal_handle >>= show_cursor
+                deinitialize session)
+            (\session -> do
+                putStrLn "Running…"
+                processor <- prepareProcessor session
+                mapM_ (handleCorpus processor session) (corpora $ pfegMode session))
 
 data SQL = RecordSQL { updateTarget  :: Statement
                      , insertContext :: Statement
@@ -81,87 +91,40 @@ logResult h resV = forever log -- who wants to be forever log
                    liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show >> hFlush h
                    put (LogState $ n+1)
 
-handle :: Bool -> FilePath -> IO ()
-handle mode configFile =
-    bracket (do putStrLn "Initializing…"
-                terminal_handle >>= hide_cursor
-                configAttempt <- configurePFEG mode configFile
-                case configAttempt of
-                     (Left err) -> error $ "Initialization failed: "++ show err
-                     (Right config) -> return config)
-            (\session -> do
-                putStrLn "Shutting down…"
-                terminal_handle >>= show_cursor
-                deinitialize session)
-            (\session -> undefined)
-             {- logVar <- newChan
-                t0     <- getCurrentTime
-                csize  <- withFile (corpus m) ReadMode hFileSize
-                void $ forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
-                void $ forkIO (void $ runStateT
-                    (logResult (cLogFile session) (cLogVar session)) (LogState 1))
-                processor <- prepareProcessor m session
-                let targets' = map (T.strip . T.pack) $ splitOn "," (targets m)
-                    iteratee = I.run =<< enumFile chunk_size (corpus m) (I.sequence_
-                        [ countChunksI' logVar
-                        , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM processor.getItems targets')])
-                runReaderT iteratee session
-                putStr "\nCommitting…"
-                doTimed_ (commit $ cDatabase session) >>= putStrLn.("\rCommitted in "++).renderSecs.round) -}
-
 type ItemProcessor = Item Text -> PFEG ()
+
+handleCorpus :: ItemProcessor -> PFEGConfig -> Corpus -> IO ()
+handleCorpus proc session (cName,cFile) = do
+     logVar <- newChan
+     t0     <- getCurrentTime
+     csize  <- withFile cFile ReadMode hFileSize
+     putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
+     threadID <- forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
+     return (threadID,logVar)
+     let iteratee = I.run =<< enumFile chunk_size cFile (I.sequence_
+                        [ countChunksI' logVar
+                        , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM proc.getItems (targets session))])
+     runReaderT iteratee session
+     killThread threadID
+     putStr "\nCommitting…"
+     doTimed_ (commit $ contextDB session) >>= putStrLn.("\rCommitted in "++).renderSecs.round
 
 prepareProcessor :: PFEGConfig -> IO ItemProcessor
 prepareProcessor session =
     case pfegMode session of
          (Record _) -> do
-                      insertCtxtS <- prepare (contextDB session) insertCtxtSQL
-                      insertTrgtS <- prepare (contextDB session) insertTargetSQL
-                      updateS     <- prepare (contextDB session) updateSQL
-                      let sql = RecordSQL { updateTarget  = updateS
-                                          , insertContext = insertCtxtS
-                                          , insertTarget  = insertTrgtS }
-                      return $ recordF sql
-         (Match _ _ _) -> undefined
-
-{-
--- Prepare SQL, assemble the @ItemProcessor@ depending on which mode we're in.
-prepareProcessor :: PFEGMain -> PFEGConfig -> IO ItemProcessor
-prepareProcessor (Record _ _  _ _ _ _) session = do
-    insertCtxtS <- prepare (cDatabase session) insertCtxtSQL
-    insertTrgtS <- prepare (cDatabase session) insertTargetSQL
-    updateS     <- prepare (cDatabase session) updateSQL
-    let sql = RecordSQL { updateTarget  = updateS
-                        , insertContext = insertCtxtS
-                        , insertTarget  = insertTrgtS }
-    return $ recordF sql
-prepareProcessor (Match _ _ _ _ _ _) session = do
-    sql <- precompileSQL mkMatchSQL (cDatabase session) matchmodes
-    return $ matchF sql
--}
-
-matchF :: MatcherInit -> Item Text -> PFEG ()
-matchF sql i = do
-    cf <- ask
-    results <- mapM (matchAPattern sql i) matchmodes
-    liftIO undefined -- putMVar (cLogVar cf) (LogData i (zip matchmodes results))
-
--- given a pattern, matcherInit and an Item, give a result from the database
--- helper function for @matchF@.
-matchAPattern :: MatcherInit -> Item Text -> MatchPattern -> PFEG Result
-matchAPattern sql i mm = do
-    cf <- ask
-    let matchMode = case pfegMode cf of (Record _) -> error "matchAPattern only works in match mode."
-                                        x          -> x
-    let pattern = item2SQLp mm (indexItem (unigramID cf) i)
-    case mm `M.lookup` sql of
-         Nothing -> error "IMPOSSIBRU!"
-         (Just s) -> do
-             void $ liftIO $ execute s pattern
-             rows <- liftIO $ fetchAllRows' s
-             return $ foldl f [] rows
-             where f r (t:c:idc:[]) = (targetIDs matchMode IM.! fromSql t,fromSql c,fromSql idc):r
-                   f _ xs           = error $ "Unexpected data format." ++ show xs
+             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
+             insertTrgtS <- prepare (contextDB session) insertTargetSQL
+             updateS     <- prepare (contextDB session) updateSQL
+             let sql = RecordSQL { updateTarget  = updateS
+                                 , insertContext = insertCtxtS
+                                 , insertTarget  = insertTrgtS }
+             return $ recordF sql
+         m@(Match _ _ _) -> do
+             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
+             logVar <- newEmptyMVar
+             void . forkIO . void $ runStateT (logResult (resultLog m) logVar) (LogState 1)
+             return $ matchF logVar (targetIDs m) sql
 
 recordF :: SQL -> Item Text -> PFEG ()
 recordF sql i = do
@@ -173,6 +136,26 @@ recordF sql i = do
     when (numRows == 0) (do
          void.liftIO $ execute (insertContext sql) pattern
          void.liftIO $ execute (insertTarget  sql) pattern')
+
+matchF :: MVar LogData -> IntMap Text -> MatcherInit -> Item Text -> PFEG ()
+matchF logVar tids sql i = do
+    results <- mapM (matchAPattern tids sql i) matchmodes
+    liftIO $ putMVar logVar (LogData i (zip matchmodes results))
+
+-- given a pattern, matcherInit and an Item, give a result from the database
+-- helper function for @matchF@.
+matchAPattern :: IntMap Text -> MatcherInit -> Item Text -> MatchPattern -> PFEG Result
+matchAPattern tids sql i mm = do
+    cf <- ask
+    let pattern = item2SQLp mm (indexItem (unigramID cf) i)
+    case mm `M.lookup` sql of
+         Nothing -> error "IMPOSSIBRU!"
+         (Just s) -> do
+             void $ liftIO $ execute s pattern
+             rows <- liftIO $ fetchAllRows' s
+             return $ foldl f [] rows
+             where f r (t:c:idc:[]) = (tids IM.! fromSql t,fromSql c,fromSql idc):r
+                   f _ xs           = error $ "Unexpected data format." ++ show xs
 
 -- FIXME: this needs a pretty printer
 instance Show LogData where
