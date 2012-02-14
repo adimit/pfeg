@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables,BangPatterns,DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables,BangPatterns #-}
 module Main where
 
 import PFEG.SQL
