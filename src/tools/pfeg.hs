@@ -97,9 +97,10 @@ logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,re
     hPutStrLn h line >> hFlush h
     where line = intercalate "\t" $ [show i, unwrap sI, unwrap lI, unwrap pI, T.unpack t, show pattern] ++ res
           unwrap = unwords.map T.unpack
+          showResult (prediction,count,ctxts) = [T.unpack prediction,show count, show ctxts]
           res = case result of
-                     [] -> [majB,"0","0","TRUE"] -- empty result, predict majority baseline
-                     ((prediction,count,ctxts):_) -> [T.unpack prediction,show count, show ctxts,"FALSE"]
+                     [] -> ["Baseline",majB] -- empty result, predict majority baseline
+                     xs -> "Prediction":concatMap showResult xs
 
 
 type ItemProcessor = Item Text -> PFEG ()
