@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module PFEG.Configuration
     ( ConfigError
+    , Corpus
     , PFEGConfig(..)
     , ModeConfig(..)
     , configurePFEG
@@ -48,8 +49,8 @@ data PFEGConfig = PFEGConfig
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
 
-data ModeConfig = Record { trainingC :: [Corpus] }
-                | Match  { testingC  :: [Corpus]
+data ModeConfig = Record { corpora   :: [Corpus] }
+                | Match  { corpora   :: [Corpus]
                          , targetIDs :: IntMap Text
                          , resultLog :: Handle }
 
@@ -85,11 +86,11 @@ initialize match cfg = do
                then (do test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         let tids = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
-                        return Match { testingC = test
+                        return Match { corpora   = test
                                      , targetIDs = tids
                                      , resultLog = resL })
                else (do train <- getCorpusSet cfg "main" "trainon"
-                        return Record { trainingC = train })
+                        return Record { corpora = train })
     return PFEGConfig { pfegMode   = runas
                       , unigramID  = uids
                       , contextDB  = ctxt
