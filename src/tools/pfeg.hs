@@ -100,14 +100,17 @@ handleCorpus proc session (cName,cFile) = do
      csize  <- withFile cFile ReadMode hFileSize
      putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
      threadID <- forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
-     return (threadID,logVar)
      let iteratee = I.run =<< enumFile chunk_size cFile (I.sequence_
                         [ countChunksI' logVar
                         , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM proc.getItems (targets session))])
      runReaderT iteratee session
      killThread threadID
-     putStr "\nCommitting…"
-     doTimed_ (commit $ contextDB session) >>= putStrLn.("\rCommitted in "++).renderSecs.round
+     case pfegMode session of
+          (Record _) -> do
+              putStr "\nCommitting…" >> hFlush stdout
+              time <- doTimed_ (commit $ contextDB session) 
+              putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
+          (Match _ _ _) -> return ()
 
 prepareProcessor :: PFEGConfig -> IO ItemProcessor
 prepareProcessor session =
