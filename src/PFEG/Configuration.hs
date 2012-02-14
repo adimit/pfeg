@@ -52,6 +52,7 @@ data PFEGConfig = PFEGConfig
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , targetIDs :: IntMap Text
+                         , majorityBaseline :: String
                          , resultLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
@@ -64,7 +65,7 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
-    case pfegMode pfeg of m@(Match _ _ _) -> hClose $ resultLog m
+    case pfegMode pfeg of m@(Match _ _ _ _) -> hClose $ resultLog m
                           (Record _)      -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
@@ -85,9 +86,11 @@ initialize match cfg = do
     runas <- if match
                then (do test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
+                        majB  <- getValue cfg "main" "majorityBaseline"
                         let tids = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
                         return Match { corpora   = test
                                      , targetIDs = tids
+                                     , majorityBaseline = majB
                                      , resultLog = resL })
                else (do train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train })
