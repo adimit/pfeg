@@ -41,7 +41,7 @@ mkMatchSQL mm = matchSQL (mkPattern mm)
 
 matchSQL :: String -> String
 matchSQL p = "SELECT t,sum(c) AS sums,count(DISTINCT ctxt.id) FROM targets,ctxt WHERE ctxt.id==targets.id AND "
-    ++ " AND " ++ p ++ " GROUP BY t ORDER BY sums DESC"
+    ++ p ++ " GROUP BY t ORDER BY sums DESC"
 
 mkPattern :: MatchPattern -> String
 mkPattern (MatchPattern mm) = intercalate " AND " . catMaybes $ zipWith ms mm ([1..]::[Int])
