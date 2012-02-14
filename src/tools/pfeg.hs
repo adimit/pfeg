@@ -85,11 +85,22 @@ countChunksI' log = I.liftI (step 0)
 
 data LogState = LogState { currentItem :: Int }
 
-logResult :: Handle -> MVar LogData -> StateT LogState IO ()
-logResult h resV = forever log -- who wants to be forever log
+logResult :: String -> Handle -> MVar LogData -> StateT LogState IO ()
+logResult majB h resV = forever log -- who wants to be forever log
     where log = do (LogState n) <- get
-                   liftIO $ takeMVar resV >>= hPutStr h.((show n ++ ": ")++).show >> hFlush h
+                   (LogData item results) <- liftIO $ takeMVar resV
+                   liftIO $ mapM_ (logDataLine majB h n item) results
                    put (LogState $ n+1)
+
+logDataLine :: String -> Handle -> Int -> Item Text -> (MatchPattern, Result) -> IO ()
+logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,result) =
+    hPutStrLn h line >> hFlush h
+    where line = intercalate "\t" $ [show i, unwrap sI, unwrap lI, unwrap pI, T.unpack t, show pattern] ++ res
+          unwrap = unwords.map T.unpack
+          res = case result of
+                     [] -> [majB,"0","0","TRUE"] -- empty result, predict majority baseline
+                     ((prediction,count,ctxts):_) -> [T.unpack prediction,show count, show ctxts,"FALSE"]
+
 
 type ItemProcessor = Item Text -> PFEG ()
 
@@ -110,7 +121,7 @@ handleCorpus proc session (cName,cFile) = do
               putStr "\nCommitting…" >> hFlush stdout
               time <- doTimed_ (commit $ contextDB session) 
               putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
-          (Match _ _ _) -> return ()
+          (Match _ _ _ _) -> return ()
 
 prepareProcessor :: PFEGConfig -> IO ItemProcessor
 prepareProcessor session =
@@ -123,10 +134,10 @@ prepareProcessor session =
                                  , insertContext = insertCtxtS
                                  , insertTarget  = insertTrgtS }
              return $ recordF sql
-         m@(Match _ _ _) -> do
+         m@(Match _ _ _ _) -> do
              sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
              logVar <- newEmptyMVar
-             void . forkIO . void $ runStateT (logResult (resultLog m) logVar) (LogState 1)
+             void . forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
              return $ matchF logVar (targetIDs m) sql
 
 recordF :: SQL -> Item Text -> PFEG ()
