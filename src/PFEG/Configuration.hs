@@ -45,6 +45,7 @@ data PFEGConfig = PFEGConfig
     , unigramID  :: UnigramIDs -- ^ Unigram ids
     , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
+    , indexDB    :: Connection
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
@@ -54,9 +55,17 @@ data ModeConfig = Record { corpora   :: [Corpus] }
                          , targetIDs :: IntMap Text
                          , majorityBaseline :: String
                          , resultLog :: Handle }
+                | Index
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError)
+
+data RunMode = RunRecord | RunMatch | RunIndex
+detectMode :: String -> Configurator RunMode
+detectMode "match" = return RunMatch
+detectMode "index" = return RunIndex
+detectMode "record" = return RunRecord
+detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
 
 liftC :: IO a -> Configurator a
 liftC m = C (lift m)
@@ -65,39 +74,46 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
+    disconnect $ indexDB pfeg
     case pfegMode pfeg of m@(Match _ _ _ _) -> hClose $ resultLog m
-                          (Record _)      -> return ()
+                          _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
-configurePFEG :: Bool -> FilePath -> IO (Either ConfigError PFEGConfig)
+configurePFEG :: String -> FilePath -> IO (Either ConfigError PFEGConfig)
 configurePFEG match f = do
     parseResult <- liftM parse (readFile f)
     case parseResult of
          (Left err)  -> return . Left . ParseError $ show err
          (Right cfg) -> runErrorT $ runC $ initialize match cfg
 
-initialize :: Bool -> Config -> Configurator PFEGConfig
-initialize match cfg = do
+initialize :: String -> Config -> Configurator PFEGConfig
+initialize modeString cfg = do
     uids  <- prepareUnigrams cfg
-    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3 
+    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
-    runas <- if match
-               then (do test  <- getCorpusSet cfg "main" "teston"
+    index <- getValue cfg "database" "index" >>= liftC . connectSqlite3
+    mode <- detectMode modeString
+    runas <- case mode of
+                  RunMatch -> do
+                        test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         majB  <- getValue cfg "main" "majorityBaseline"
                         let tids = IM.fromList $ zip (mapMaybe (`M.lookup` uids) targs) targs
                         return Match { corpora   = test
                                      , targetIDs = tids
                                      , majorityBaseline = majB
-                                     , resultLog = resL })
-               else (do train <- getCorpusSet cfg "main" "trainon"
-                        return Record { corpora = train })
+                                     , resultLog = resL }
+                  RunRecord -> do
+                        train <- getCorpusSet cfg "main" "trainon"
+                        return Record { corpora = train }
+                  RunIndex -> return Index
     return PFEGConfig { pfegMode   = runas
                       , unigramID  = uids
                       , contextDB  = ctxt
                       , statusLine = statC
+                      , indexDB    = index
                       , targets    = targs
                       , chunkSize  = csize }
 
