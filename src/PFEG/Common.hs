@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module PFEG.Common
     ( -- * Types
       Wordcounts
@@ -14,6 +15,7 @@ module PFEG.Common
     , snd3
     , trd3
       -- * Shared iteratees
+    , countChunksI
     , corpusI
       -- * Configuration
     , UnigramIDs
@@ -31,9 +33,11 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.HashMap.Strict (HashMap)
 
 import Data.ByteString (ByteString)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad (forever)
 import Control.Concurrent.Chan
 import Data.Attoparsec.Iteratee
+import Data.Iteratee.Base
 
 import System.Time.Utils (renderSecs)
 
@@ -112,6 +116,12 @@ trd3    (_,_,c) =  c
 
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
+
+countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
+countChunksI log = I.liftI (step 0)
+    where step (!i) (Chunk _) = let i' = i+1
+                                in liftIO (writeChan log i') >> I.liftI (step i')
+          step _    stream    = I.idone () stream
 
 logger :: Int -> Chan Int -> IO ()
 logger etc logVar = do
