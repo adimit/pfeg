@@ -136,7 +136,8 @@ process session =
         Index -> do
             inesertIndexS  <- prepare (indexDB session) insertIndexSQL
             selectAllCtxtS <- prepare (indexDB session) selectAllCtxtSQL
-            (totalItems::Int) <- liftM (fromSql.head.head) $ quickQuery' (contextDB session) "SELECT count(*) FROM ctxt" []
+            (totalItems::Int) <- liftM (fromSql.head.head) $
+                quickQuery' (contextDB session) "SELECT count(*) FROM ctxt" []
             -- execute selectAllCtxtS 
             undefined
         m@(Record _) -> do
@@ -150,7 +151,8 @@ process session =
         m@(Match _ _ _ _) -> do
             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
             logVar <- newEmptyMVar
-            threadID <- forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
+            threadID <- forkIO . void $
+                runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
             workOnCorpora (matchF logVar (targetIDs m) sql) session (corpora m)
             killThread threadID
 
