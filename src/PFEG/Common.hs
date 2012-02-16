@@ -131,7 +131,7 @@ logger etc logVar = do
         tcur <- getCurrentTime
         let ρ   = fromIntegral numChunks / fromIntegral etc
             δt  = tcur `diffUTCTime` t0
-            eta = (1-ρ) * δt
+            eta = (recip ρ - 1) * δt
         putStr $ "\rRunning for " ++ renderS δt
                   ++ "; did " ++ show numChunks
                   ++ " chunks; ("++ show (round (100*ρ) :: Integer)
