@@ -124,17 +124,17 @@ countChunksI log = I.liftI (step 0)
           step _    stream    = I.idone () stream
 
 logger :: Int -> Chan Int -> IO ()
-logger etc logVar = do
+logger total logVar = do
     t0 <- getCurrentTime
     forever $ do
-        numChunks <- readChan logVar
+        cur <- readChan logVar
         tcur <- getCurrentTime
-        let ρ   = fromIntegral numChunks / fromIntegral etc
+        let ρ   = fromIntegral cur / fromIntegral total
             δt  = tcur `diffUTCTime` t0
             eta = (recip ρ - 1) * δt
         putStr $ "\rRunning for " ++ renderS δt
-                  ++ "; did " ++ show numChunks
-                  ++ " chunks; ("++ show (round (100*ρ) :: Integer)
+                  ++ "; did " ++ show cur ++ "/" ++ show total
+                  ++ " (" ++ show (round (100*ρ) :: Integer)
                   ++ "%) ETA: " ++ renderS eta ++ "   "
         hFlush stdout
 
