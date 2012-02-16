@@ -57,7 +57,7 @@ main = do
     (mode :: String, configFile :: FilePath) <- readArgs
     bracket (do putStrLn "Initializing…"
                 terminal_handle >>= hide_cursor
-                configAttempt <- configurePFEG (mode == "match") configFile
+                configAttempt <- configurePFEG mode configFile
                 case configAttempt of
                      (Left err) -> error $ "Initialization failed: "++ show err
                      (Right config) -> return config)
@@ -67,8 +67,7 @@ main = do
                 deinitialize session)
             (\session -> do
                 putStrLn "Running…"
-                processor <- prepareProcessor session
-                mapM_ (handleCorpus processor session) (corpora $ pfegMode session))
+                process session)
 
 data SQL = RecordSQL { updateTarget  :: Statement
                      , insertContext :: Statement
@@ -105,6 +104,9 @@ logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,re
 
 type ItemProcessor = Item Text -> PFEG ()
 
+workOnCorpora :: ItemProcessor -> PFEGConfig -> [Corpus] -> IO ()
+workOnCorpora processor session = mapM_ (handleCorpus processor session)
+
 handleCorpus :: ItemProcessor -> PFEGConfig -> Corpus -> IO ()
 handleCorpus proc session (cName,cFile) = do
      logVar <- newChan
@@ -118,28 +120,38 @@ handleCorpus proc session (cName,cFile) = do
      runReaderT iteratee session
      killThread threadID
      case pfegMode session of
-          (Record _) -> do
-              putStr "\nCommitting…" >> hFlush stdout
-              time <- doTimed_ (commit $ contextDB session) 
-              putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
-          (Match _ _ _ _) -> return ()
+          (Record _) -> commitTo $ contextDB session
+          Index      -> commitTo $ indexDB session
+          _          -> return ()
 
-prepareProcessor :: PFEGConfig -> IO ItemProcessor
-prepareProcessor session =
+commitTo :: Connection -> IO ()
+commitTo conn = do
+     putStr "\nCommitting…" >> hFlush stdout
+     time <- doTimed_ $ commit conn
+     putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
+
+process :: PFEGConfig -> IO ()
+process session =
     case pfegMode session of
-         (Record _) -> do
-             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
-             insertTrgtS <- prepare (contextDB session) insertTargetSQL
-             updateS     <- prepare (contextDB session) updateSQL
-             let sql = RecordSQL { updateTarget  = updateS
-                                 , insertContext = insertCtxtS
-                                 , insertTarget  = insertTrgtS }
-             return $ recordF sql
-         m@(Match _ _ _ _) -> do
-             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
-             logVar <- newEmptyMVar
-             void . forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
-             return $ matchF logVar (targetIDs m) sql
+        Index -> do
+            inesertIndexS  <- prepare (indexDB session) insertIndexSQL
+            selectAllCtxtS <- prepare (indexDB session) selectAllCtxtSQL
+            (totalItems::Int) <- liftM (fromSql.head.head) $ quickQuery' (contextDB session) "SELECT count(*) FROM ctxt" []
+            -- execute selectAllCtxtS 
+            undefined
+        m@(Record _) -> do
+            insertCtxtS <- prepare (contextDB session) insertCtxtSQL
+            insertTrgtS <- prepare (contextDB session) insertTargetSQL
+            updateS     <- prepare (contextDB session) updateSQL
+            let sql = RecordSQL { updateTarget  = updateS
+                                , insertContext = insertCtxtS
+                                , insertTarget  = insertTrgtS }
+            workOnCorpora (recordF sql) session (corpora m)
+        m@(Match _ _ _ _) -> do
+            sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
+            logVar <- newEmptyMVar
+            void . forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
+            workOnCorpora (matchF logVar (targetIDs m) sql) session (corpora m)
 
 recordF :: SQL -> Item Text -> PFEG ()
 recordF sql i = do

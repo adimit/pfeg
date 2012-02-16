@@ -10,6 +10,9 @@ module PFEG.SQL
       -- * matcher SQL helpers
     , mkMatchSQL
     , item2SQLp
+      -- * Index SQL
+    , insertIndexSQL
+    , selectAllCtxtSQL
     ) where
 
 import Database.HDBC
@@ -24,7 +27,14 @@ import Data.Convertible.Base (Convertible)
 
 import Prelude hiding (null)
 
-{- .schema
+{- 
+ - reverse index
+ - .schema
+
+CREATE TABLE index (token int, cid int, primary key (token,cid));
+
+ - contextdb
+ - .schema
 
 CREATE TABLE ctxt (id integer primary key autoincrement, s1 integer,s2
 integer,s3 integer,s4 integer,s5 integer,s6 integer,l1 integer,l2 integer,l3
@@ -35,6 +45,12 @@ UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
 CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
 
  -}
+
+insertIndexSQL :: String
+insertIndexSQL = "INSERT INTO index (token,cid) VALUES (?,?)"
+
+selectAllCtxtSQL :: String
+selectAllCtxtSQL = "SELECT " ++ contextNames ++ " FROM ctxt"
 
 mkMatchSQL :: MatchPattern -> String
 mkMatchSQL mm = matchSQL (mkPattern mm)
@@ -59,10 +75,12 @@ item2SQLp (MatchPattern mm) (Item (Context pI) (Context lI) (Context sI) _t) =
           ms (Just S) = Just . trd3
           ms Nothing  = const Nothing
 
+contextNames :: String
+contextNames = intercalate "," $ map (`commas` [1..6]) "slp"
+
 updateSQL, insertCtxtSQL, insertTargetSQL, selectSubquerySQL :: String
 updateSQL = "UPDATE targets SET c=c+1 WHERE t==? AND id="++selectSubquerySQL
 insertCtxtSQL = "INSERT or IGNORE INTO ctxt ("++contextNames++") VALUES ("++questionmarks 18++")"
-    where contextNames = intercalate "," $ map (`commas` [1..6]) "slp"
 insertTargetSQL = "INSERT INTO targets (t,id,c) VALUES (?,"++selectSubquerySQL++",1)"
 selectSubquerySQL = "(SELECT id FROM ctxt WHERE "++ cn ++")"
     where cn = intercalate " AND " $ map (\c -> intercalate " AND " $ map (++"==?") (letters c [1..6])) "slp"
