@@ -31,7 +31,7 @@ import Prelude hiding (null)
  - reverse index
  - .schema
 
-CREATE TABLE index (token int, cid int, primary key (token,cid));
+CREATE TABLE rindex (token int, cid int, primary key (token,cid));
 
  - contextdb
  - .schema
@@ -47,10 +47,10 @@ CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
  -}
 
 insertIndexSQL :: String
-insertIndexSQL = "INSERT INTO index (token,cid) VALUES (?,?)"
+insertIndexSQL = "INSERT INTO rindex (token,cid) VALUES (?,?)"
 
 selectAllCtxtSQL :: String
-selectAllCtxtSQL = "SELECT " ++ contextNames ++ " FROM ctxt"
+selectAllCtxtSQL = "SELECT (id," ++ contextNames ++ ") FROM ctxt"
 
 mkMatchSQL :: MatchPattern -> String
 mkMatchSQL mm = matchSQL (mkPattern mm)
