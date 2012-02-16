@@ -119,15 +119,13 @@ logger etc logVar = do
     forever $ do
         numChunks <- readChan logVar
         tcur <- getCurrentTime
-        let numChunks' = fromIntegral numChunks
-            etc'       = fromIntegral etc
-            difference = tcur `diffUTCTime` t0
-            eta        = difference / numChunks' * etc'
-            percent    = numChunks' * 100 / etc'
-        putStr $ "\rRunning for " ++ renderS difference
+        let ρ   = fromIntegral numChunks / fromIntegral etc
+            δ   = tcur `diffUTCTime` t0
+            eta = (1-ρ) * δ
+        putStr $ "\rRunning for " ++ renderS δ
                   ++ "; did " ++ show numChunks
-                  ++ " chunks; ("++ show (round percent :: Integer)
-                  ++ "%) ETA: " ++ renderS (eta-difference) ++ "   "
+                  ++ " chunks; ("++ show (round (100*ρ) :: Integer)
+                  ++ "%) ETA: " ++ renderS eta ++ "   "
         hFlush stdout
 
 type UnigramIDs = HashMap Text Int
