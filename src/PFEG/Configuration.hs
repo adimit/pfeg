@@ -93,7 +93,7 @@ initialize modeString cfg = do
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
-    index <- getValue cfg "database" "index" >>= liftC . connectSqlite3
+    index <- getValue cfg "databases" "index" >>= liftC . connectSqlite3
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
