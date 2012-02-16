@@ -150,8 +150,9 @@ process session =
         m@(Match _ _ _ _) -> do
             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
             logVar <- newEmptyMVar
-            void . forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
+            threadID <- forkIO . void $ runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
             workOnCorpora (matchF logVar (targetIDs m) sql) session (corpora m)
+            killThread threadID
 
 recordF :: SQL -> Item Text -> PFEG ()
 recordF sql i = do
