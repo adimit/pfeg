@@ -27,8 +27,6 @@ import PFEG.Common
 import System.IO (hFileSize,withFile,IOMode(ReadMode))
 import System.Time.Utils (renderSecs)
 
-import Data.Time.Clock
-
 import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
 
@@ -54,15 +52,17 @@ mkInsertStmt tn = "INSERT OR IGNORE INTO " ++ tn ++ " (f) " ++ " VALUES (?) "
 insert :: Statement -> X.Text -> IO ()
 insert insS t = void $ execute insS [toSql t]
 
+chunkSize :: Int
+chunkSize = 1048576
+
 main :: IO ()
 main = do
     (table:file:[]) <- getArgs
     logVar    <- newChan
-    startTime <- getCurrentTime
     term      <- terminal_handle
     csize     <- withFile file ReadMode hFileSize
-    let etc = (fromIntegral csize `div` chunk_size)+1 -- estimated chunk size
-    void $ forkIO $ logger etc startTime logVar
+    let etc = (fromIntegral csize `div` chunkSize)+1
+    void $ forkIO $ logger etc logVar
     bracket (do putStr "Connecting…"
                 unidb <- connectSqlite3 table
                 hide_cursor term
@@ -74,7 +74,7 @@ main = do
             (\unidb ->
              do insertStmt <- prepare unidb (mkInsertStmt "unigrams")
                 insert insertStmt (X.pack "NULL")
-                I.run =<< enumFile chunk_size file (I.sequence_
+                I.run =<< enumFile chunkSize file (I.sequence_
                     [ countChunksI logVar, wordI insertStmt ])
                 putStrLn "\nDone.\nCommitting…"
                 doTimed_ (commit unidb) >>= putStrLn.("Took "++).renderSecs.round
