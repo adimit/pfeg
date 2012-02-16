@@ -113,8 +113,8 @@ handleCorpus proc session (cName,cFile) = do
      t0     <- getCurrentTime
      csize  <- withFile cFile ReadMode hFileSize
      putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
-     threadID <- forkIO $ logger ((fromIntegral csize `div` chunk_size)+1) t0 logVar
-     let iteratee = I.run =<< enumFile chunk_size cFile (I.sequence_
+     threadID <- forkIO $ logger ((fromIntegral csize `div` chunkSize session)+1) t0 logVar
+     let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                         [ countChunksI' logVar
                         , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM proc.getItems (targets session))])
      runReaderT iteratee session

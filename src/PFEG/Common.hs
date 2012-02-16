@@ -17,8 +17,6 @@ module PFEG.Common
       -- * Shared iteratees
     , countChunksI
     , corpusI
-      -- * Constants
-    , chunk_size
       -- * Configuration
     , UnigramIDs
       -- * types
@@ -70,9 +68,6 @@ instance Hashable MatchPattern where
              f x (Just P ) = shift x 2 .|. 1
              f x (Just L ) = shift x 2 .|. 2
              f x (Just S ) = shift x 2 .|. 3
-
-chunk_size :: Int
-chunk_size = (1024 :: Int) ^ (2 :: Int)
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do
