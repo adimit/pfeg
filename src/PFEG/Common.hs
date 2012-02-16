@@ -123,19 +123,21 @@ countChunksI log = I.liftI (step 0)
                                 in liftIO (writeChan log i') >> I.liftI (step i')
           step _    stream    = I.idone () stream
 
-logger :: Int -> UTCTime -> Chan Int -> IO ()
-logger etc startTime logVar = forever log -- who wants to be forever log?
-    where log = do numChunks <- readChan logVar
-                   currentT <- getCurrentTime
-                   let numChunks' = fromIntegral numChunks
-                       etc'       = fromIntegral etc
-                       difference = currentT `diffUTCTime` startTime
-                       eta        = difference / numChunks' * etc'
-                       percent    = numChunks' * 100 / etc'
-                   putStr $ "\rRunning for " ++ renderS difference
-                             ++ "; did " ++ show numChunks
-                             ++ " chunks; ("++ show (round percent :: Integer)
-                             ++ "%) ETA: " ++ renderS (eta-difference) ++ "   "
-                   hFlush stdout
+logger :: Int -> Chan Int -> IO ()
+logger etc logVar = do
+    t0 <- getCurrentTime
+    forever $ do
+        numChunks <- readChan logVar
+        tcur <- getCurrentTime
+        let numChunks' = fromIntegral numChunks
+            etc'       = fromIntegral etc
+            difference = tcur `diffUTCTime` t0
+            eta        = difference / numChunks' * etc'
+            percent    = numChunks' * 100 / etc'
+        putStr $ "\rRunning for " ++ renderS difference
+                  ++ "; did " ++ show numChunks
+                  ++ " chunks; ("++ show (round percent :: Integer)
+                  ++ "%) ETA: " ++ renderS (eta-difference) ++ "   "
+        hFlush stdout
 
 type UnigramIDs = HashMap Text Int
