@@ -47,10 +47,10 @@ CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
  -}
 
 insertIndexSQL :: String
-insertIndexSQL = "INSERT INTO rindex (token,cid) VALUES (?,?)"
+insertIndexSQL = "INSERT OR IGNORE INTO rindex (token,cid) VALUES (?,?)"
 
 selectAllCtxtSQL :: String
-selectAllCtxtSQL = "SELECT (id," ++ contextNames ++ ") FROM ctxt"
+selectAllCtxtSQL = "SELECT id," ++ contextNames ++ " FROM ctxt"
 
 mkMatchSQL :: MatchPattern -> String
 mkMatchSQL mm = matchSQL (mkPattern mm)
