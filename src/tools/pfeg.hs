@@ -34,7 +34,7 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (forever,liftM,foldM,when,void)
+import Control.Monad (when,forever,liftM,foldM,when,void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -126,16 +126,37 @@ commitTo conn = do
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
 
+indexF :: Statement -> Statement -> Chan Int -> IO ()
+indexF selS insS logChan =
+    execute selS [] >> void (execStateT index 0)
+    where index :: StateT Int IO ()
+          index = do
+             row <- liftIO $ fetchRow selS
+             case row of
+                  Nothing -> return ()
+                  Just (cid:ts) -> do
+                     m <- get
+                     liftIO $ executeMany insS (map (:[cid]) ts)
+                     when (mod m 1000 == 0) (liftIO $ writeChan logChan m)
+                     put $! (m+1)
+                     index
+                  xs -> error $ "Can't use this to index: " ++ show xs
+
 process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
         Index -> do
-            inesertIndexS  <- prepare (indexDB session) insertIndexSQL
-            selectAllCtxtS <- prepare (indexDB session) selectAllCtxtSQL
+            insertIndexS  <- prepare (indexDB session) insertIndexSQL
+            selectAllCtxtS <- prepare (contextDB session) selectAllCtxtSQL
+            putStrLn "Querying context db for size."
             (totalItems::Int) <- liftM (fromSql.head.head) $
                 quickQuery' (contextDB session) "SELECT count(*) FROM ctxt" []
-            -- execute selectAllCtxtS 
-            undefined
+            putStrLn $ "Size is " ++ show totalItems
+            logChan <- newChan
+            threadID <- forkIO $ logger totalItems logChan
+            indexF selectAllCtxtS insertIndexS logChan
+            killThread threadID
+            commitTo $ indexDB session
         m@(Record _) -> do
             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
             insertTrgtS <- prepare (contextDB session) insertTargetSQL
