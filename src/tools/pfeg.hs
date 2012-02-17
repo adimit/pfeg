@@ -118,7 +118,6 @@ handleCorpus proc session (cName,cFile) = do
      killThread threadID
      case pfegMode session of
           (Record _) -> commitTo $ contextDB session
-          Index      -> commitTo $ indexDB session
           _          -> return ()
 
 commitTo :: Connection -> IO ()
