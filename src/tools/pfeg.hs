@@ -26,8 +26,6 @@ import Data.Text (Text)
 import qualified Data.HashMap.Strict as M
 import Data.HashMap.Strict (HashMap)
 
-import Data.Time.Clock
-
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
 import Control.Concurrent (killThread,forkIO)
