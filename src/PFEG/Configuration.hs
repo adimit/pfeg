@@ -24,6 +24,7 @@ import Control.Monad.Error
 import Control.Monad.Trans.State.Strict
 import Data.List.Split (splitOn)
 import Data.Maybe (mapMaybe)
+import qualified Database.Redis as Redis
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -55,7 +56,7 @@ data ModeConfig = Record { corpora   :: [Corpus] }
                          , targetIDs :: IntMap Text
                          , majorityBaseline :: String
                          , resultLog :: Handle }
-                | Index
+                | Index  { indexConn :: Redis.Connection }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError)
@@ -108,7 +109,9 @@ initialize modeString cfg = do
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train }
-                  RunIndex -> return Index
+                  RunIndex -> do
+                        conn <- liftC $ Redis.connect Redis.defaultConnectInfo 
+                        return Index { indexConn = conn }
     return PFEGConfig { pfegMode   = runas
                       , unigramID  = uids
                       , contextDB  = ctxt

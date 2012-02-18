@@ -1,6 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables,BangPatterns #-}
 module Main where
 
+import qualified Database.Redis as Redis
+
 import PFEG.SQL
 import PFEG.Common
 import PFEG.Context
@@ -17,6 +19,7 @@ import qualified Data.Iteratee as I
 import Data.Iteratee.IO
 import Data.Iteratee.Base
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as B
 import Data.Maybe (fromMaybe)
 
 import System.IO
@@ -34,7 +37,7 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when,forever,liftM,foldM,when,void)
+import Control.Monad (when,forM_,forever,liftM,foldM,when,void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -43,6 +46,8 @@ import Graphics.Vty.Terminal
 
 import PFEG.Configuration
 import ReadArgs
+
+default (Int)
 
 type PFEG a = ReaderT PFEGConfig IO a
 
@@ -99,7 +104,6 @@ logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,re
                      [] -> ["Baseline",majB] -- empty result, predict majority baseline
                      xs -> "Prediction":concatMap showResult xs
 
-
 type ItemProcessor = Item Text -> PFEG ()
 
 workOnCorpora :: ItemProcessor -> PFEGConfig -> [Corpus] -> IO ()
@@ -126,8 +130,8 @@ commitTo conn = do
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
 
-indexF :: Statement -> Statement -> Chan Int -> IO ()
-indexF selS insS logChan =
+indexF :: Statement -> Redis.Connection -> Chan Int -> IO ()
+indexF selS conn logChan =
     execute selS [] >> void (execStateT index 0)
     where index :: StateT Int IO ()
           index = do
@@ -136,7 +140,10 @@ indexF selS insS logChan =
                   Nothing -> return ()
                   Just (cid:ts) -> do
                      m <- get
-                     liftIO $ executeMany insS (map (:[cid]) ts)
+                     liftIO $ Redis.runRedis conn $ do
+                         let ts' = zip ts (concat.repeat $ [1..6])
+                         forM_ ts' (\ (tid,pos) ->
+                            Redis.sadd (B.concat [B.pack $ show pos,fromSql tid]) [fromSql cid])
                      when (mod m 1000 == 0) (liftIO $ writeChan logChan m)
                      put $! (m+1)
                      index
@@ -145,8 +152,7 @@ indexF selS insS logChan =
 process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
-        Index -> do
-            insertIndexS  <- prepare (indexDB session) insertIndexSQL
+        m@(Index _) -> do
             selectAllCtxtS <- prepare (contextDB session) selectAllCtxtSQL
             putStrLn "Querying context db for size."
             (totalItems::Int) <- liftM (fromSql.head.head) $
@@ -154,9 +160,8 @@ process session =
             putStrLn $ "Size is " ++ show totalItems
             logChan <- newChan
             threadID <- forkIO $ logger totalItems logChan
-            indexF selectAllCtxtS insertIndexS logChan
+            indexF selectAllCtxtS (indexConn m) logChan
             killThread threadID
-            commitTo $ indexDB session
         m@(Record _) -> do
             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
             insertTrgtS <- prepare (contextDB session) insertTargetSQL
