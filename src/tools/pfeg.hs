@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables,BangPatterns #-}
+{-# LANGUAGE OverloadedStrings,ExtendedDefaultRules,ScopedTypeVariables,BangPatterns #-}
 module Main where
 
 import PFEG.SQL
@@ -19,6 +19,9 @@ import Data.Iteratee.Base
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 
+import qualified Database.MongoDB as Mongo
+import Database.MongoDB ((=:))
+
 import System.IO
 
 import qualified Data.Text as T
@@ -34,7 +37,7 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Reader
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when,forever,liftM,foldM,when,void)
+import Control.Monad (forM_,when,forever,liftM,foldM,when,void)
 
 import Database.HDBC
 import Database.HDBC.Sqlite3
@@ -126,8 +129,8 @@ commitTo conn = do
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
 
-indexF :: Statement -> Statement -> Chan Int -> IO ()
-indexF selS insS logChan =
+indexF :: Statement -> Mongo.Pipe -> Chan Int -> IO ()
+indexF selS pipe logChan =
     execute selS [] >> void (execStateT index 0)
     where index :: StateT Int IO ()
           index = do
@@ -136,7 +139,10 @@ indexF selS insS logChan =
                   Nothing -> return ()
                   Just (cid:ts) -> do
                      m <- get
-                     liftIO $ executeMany insS (map (:[cid]) ts)
+                     Mongo.access pipe Mongo.master "de" $
+                         forM_ (zip ts (concat.repeat $ ["1","2","3","4","5","6"]))
+                            (\ (x,pos) -> Mongo.repsert (Mongo.select [ "_id" =: (fromSql x ::Int) ] "records")
+                                                    [ "$push" =:  [ pos =: (fromSql cid::Int ) ] ])
                      when (mod m 1000 == 0) (liftIO $ writeChan logChan m)
                      put $! (m+1)
                      index
@@ -146,7 +152,6 @@ process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
         Index -> do
-            insertIndexS  <- prepare (indexDB session) insertIndexSQL
             selectAllCtxtS <- prepare (contextDB session) selectAllCtxtSQL
             putStrLn "Querying context db for size."
             (totalItems::Int) <- liftM (fromSql.head.head) $
@@ -154,9 +159,8 @@ process session =
             putStrLn $ "Size is " ++ show totalItems
             logChan <- newChan
             threadID <- forkIO $ logger totalItems logChan
-            indexF selectAllCtxtS insertIndexS logChan
+            indexF selectAllCtxtS (indexDB session) logChan
             killThread threadID
-            commitTo $ indexDB session
         m@(Record _) -> do
             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
             insertTrgtS <- prepare (contextDB session) insertTargetSQL

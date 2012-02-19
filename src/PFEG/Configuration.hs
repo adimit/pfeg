@@ -7,6 +7,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import qualified Database.MongoDB as Mongo
 import Control.Concurrent.Chan
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
@@ -45,7 +46,7 @@ data PFEGConfig = PFEGConfig
     , unigramID  :: UnigramIDs -- ^ Unigram ids
     , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
-    , indexDB    :: Connection
+    , indexDB    :: Mongo.Pipe -- ^ Reverse index connection
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
@@ -74,7 +75,7 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
-    disconnect $ indexDB pfeg
+    Mongo.close $ indexDB pfeg
     case pfegMode pfeg of m@(Match _ _ _ _) -> hClose $ resultLog m
                           _ -> return ()
 
@@ -93,7 +94,8 @@ initialize modeString cfg = do
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
-    index <- getValue cfg "databases" "index" >>= liftC . connectSqlite3
+    mongo <- getValue cfg "databases" "mongoDBHost"
+    index <- liftC . Mongo.runIOE $ Mongo.connect (Mongo.host mongo)
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
