@@ -143,8 +143,11 @@ indexF selS pipe logChan =
           transform' :: [SqlValue] -> StateT TransformState IO ()
           transform' (cidSql:tidsSql) = do
               (TS index cache) <- get
-              let triples = zip3 (map fromSql tidsSql) (concat . repeat $ [1..6]) (repeat $ fromSql cidSql) :: [(Int,Int,Int)]
-                  cache' = foldl' (\m (tid,pos,cid) -> M.insertWith ISet.intersection (tid,pos) (ISet.singleton cid) m) cache triples
+              let triples = zip3 (map fromSql tidsSql) (concat . repeat $ [1..6]) (repeat $ fromSql cidSql)
+                  cache' = foldl' updateCache cache triples
+                  updateCache m (tid,pos,cid) = case (tid,pos) `M.lookup` m of
+                        Nothing -> M.insert (tid,pos) (ISet.singleton cid) m
+                        Just iset -> M.insert (tid,pos) (ISet.insert cid iset) m
               when (mod index 100 == 0) (liftIO $ writeChan logChan index)
               if mod index 10000 == 0
                  then do liftIO . void $ Mongo.access pipe Mongo.master "de" $ forM_ (M.toList cache') mongoRepsert
