@@ -149,7 +149,7 @@ indexF selS pipe logChan =
                         Nothing -> M.insert (tid,pos) (ISet.singleton cid) m
                         Just iset -> M.insert (tid,pos) (ISet.insert cid iset) m
               when (mod index 100 == 0) (liftIO $ writeChan logChan index)
-              if mod index 10000 == 0
+              if mod index 5000 == 0
                  then do liftIO . void $ mongoRepsert cache'
                          put $! TS (index+1) M.empty -- clear cache
                  else    put $! TS (index+1) cache'  -- continue accumulating cache
