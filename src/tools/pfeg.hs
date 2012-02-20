@@ -161,7 +161,7 @@ process session =
             threadID <- forkIO $ logger totalItems logChan
             indexF selectAllCtxtS (indexDB session) logChan
             killThread threadID
-        m@(Record _) -> do
+        m@Record{} -> do
             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
             insertTrgtS <- prepare (contextDB session) insertTargetSQL
             updateS     <- prepare (contextDB session) updateSQL
@@ -169,7 +169,7 @@ process session =
                                 , insertContext = insertCtxtS
                                 , insertTarget  = insertTrgtS }
             workOnCorpora (recordF sql) session (corpora m)
-        m@(Match _ _ _ _) -> do
+        m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
             logVar <- newEmptyMVar
             threadID <- forkIO . void $

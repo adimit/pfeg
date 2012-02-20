@@ -76,7 +76,7 @@ deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
     Mongo.close $ indexDB pfeg
-    case pfegMode pfeg of m@(Match _ _ _ _) -> hClose $ resultLog m
+    case pfegMode pfeg of m@Match {} -> hClose $ resultLog m
                           _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
