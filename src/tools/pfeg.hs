@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings,ExtendedDefaultRules,ScopedTypeVariables,BangPatterns #-}
 module Main where
 
+import Data.UString (u)
 import PFEG.SQL
 import PFEG.Common
 import PFEG.Context
@@ -8,10 +9,13 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import System.Time.Utils (renderSecs)
-import Data.List (intercalate)
+import Data.List (foldl',intercalate)
 
 import Data.IntMap (IntMap)
-import qualified Data.IntMap as IM
+import qualified Data.IntMap as IMap
+
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as ISet
 
 import qualified Data.Iteratee as I
 import Data.Iteratee.IO
@@ -129,24 +133,26 @@ commitTo conn = do
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
 
+data TransformState = TS { tsIndex :: !Int, tsCache :: !(HashMap (Int,Int) IntSet) }
+
 indexF :: Statement -> Mongo.Pipe -> Chan Int -> IO ()
 indexF selS pipe logChan =
-    execute selS [] >> void (execStateT index 0)
-    where index :: StateT Int IO ()
-          index = do
-             row <- liftIO $ fetchRow selS
-             case row of
-                  Nothing -> return ()
-                  Just (cid:ts) -> do
-                     m <- get
-                     Mongo.access pipe Mongo.master "de" $
-                         forM_ (zip ts (concat.repeat $ ["1","2","3","4","5","6"]))
-                            (\ (x,pos) -> Mongo.repsert (Mongo.select [ "_id" =: (fromSql x ::Int) ] "records")
-                                                    [ "$push" =:  [ pos =: (fromSql cid::Int ) ] ])
-                     when (mod m 1000 == 0) (liftIO $ writeChan logChan m)
-                     put $! (m+1)
-                     index
-                  xs -> error $ "Can't use this to index: " ++ show xs
+    execute selS [] >> fetchAllRows selS >>= transform
+    where transform :: [[SqlValue]] -> IO ()
+          transform sqlResults = void $ execStateT (forM_ sqlResults transform') (TS 1 M.empty)
+          transform' :: [SqlValue] -> StateT TransformState IO ()
+          transform' (cidSql:tidsSql) = do
+              (TS index cache) <- get
+              let triples = zip3 (map fromSql tidsSql) (concat . repeat $ [1..6]) (repeat $ fromSql cidSql) :: [(Int,Int,Int)]
+                  cache' = foldl' (\m (tid,pos,cid) -> M.insertWith ISet.intersection (tid,pos) (ISet.singleton cid) m) cache triples
+              if mod index 1000 == 0
+                 then do liftIO . void $ Mongo.access pipe Mongo.master "de" $ forM_ (M.toList cache') mongoRepsert
+                         liftIO $ writeChan logChan index
+                         put $! TS (index+1) M.empty -- clear cache
+                 else    put $! TS (index+1) cache'  -- continue accumulating cache
+          transform' xs = error $ "Malformed SQL output: " ++ show xs
+          mongoRepsert ((tid,pos),cids) = Mongo.repsert (Mongo.select [ "_id" =: tid ] "records")
+                                            [ "$pushAll" =: [ (u.show $ pos) =: ISet.toList cids ] ]
 
 process :: PFEGConfig -> IO ()
 process session =
@@ -205,7 +211,7 @@ matchAPattern tids sql i mm = do
              void $ liftIO $ execute s pattern
              rows <- liftIO $ fetchAllRows' s
              return $ foldl f [] rows
-             where f r (t:c:idc:[]) = (tids IM.! fromSql t,fromSql c,fromSql idc):r
+             where f r (t:c:idc:[]) = (tids IMap.! fromSql t,fromSql c,fromSql idc):r
                    f _ xs           = error $ "Unexpected data format." ++ show xs
 
 -- FIXME: this needs a pretty printer
