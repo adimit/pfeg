@@ -145,9 +145,9 @@ indexF selS pipe logChan =
               (TS index cache) <- get
               let triples = zip3 (map fromSql tidsSql) (concat . repeat $ [1..6]) (repeat $ fromSql cidSql) :: [(Int,Int,Int)]
                   cache' = foldl' (\m (tid,pos,cid) -> M.insertWith ISet.intersection (tid,pos) (ISet.singleton cid) m) cache triples
-              if mod index 1000 == 0
+              when (mod index 100 == 0) (liftIO $ writeChan logChan index)
+              if mod index 10000 == 0
                  then do liftIO . void $ Mongo.access pipe Mongo.master "de" $ forM_ (M.toList cache') mongoRepsert
-                         liftIO $ writeChan logChan index
                          put $! TS (index+1) M.empty -- clear cache
                  else    put $! TS (index+1) cache'  -- continue accumulating cache
           transform' xs = error $ "Malformed SQL output: " ++ show xs
