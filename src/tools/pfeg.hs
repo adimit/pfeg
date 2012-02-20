@@ -139,7 +139,7 @@ indexF :: Statement -> Mongo.Pipe -> Chan Int -> IO ()
 indexF selS pipe logChan =
     execute selS [] >> fetchAllRows selS >>= transform
     where transform :: [[SqlValue]] -> IO ()
-          transform sqlResults = void $ execStateT (forM_ sqlResults transform') (TS 1 M.empty)
+          transform sqlResults = execStateT (forM_ sqlResults transform') (TS 1 M.empty) >>= void.mongoRepsert.tsCache
           transform' :: [SqlValue] -> StateT TransformState IO ()
           transform' (cidSql:tidsSql) = do
               (TS index cache) <- get
@@ -150,12 +150,14 @@ indexF selS pipe logChan =
                         Just iset -> M.insert (tid,pos) (ISet.insert cid iset) m
               when (mod index 100 == 0) (liftIO $ writeChan logChan index)
               if mod index 10000 == 0
-                 then do liftIO . void $ Mongo.access pipe Mongo.master "de" $ forM_ (M.toList cache') mongoRepsert
+                 then do liftIO . void $ mongoRepsert cache'
                          put $! TS (index+1) M.empty -- clear cache
                  else    put $! TS (index+1) cache'  -- continue accumulating cache
           transform' xs = error $ "Malformed SQL output: " ++ show xs
-          mongoRepsert ((tid,pos),cids) = Mongo.repsert (Mongo.select [ "_id" =: tid ] "records")
-                                            [ "$pushAll" =: [ (u.show $ pos) =: ISet.toList cids ] ]
+          mongoRepsert input = Mongo.access pipe Mongo.master "de" $
+                               forM_ (M.toList input) $ \ ((tid,pos),cids) ->
+                                     Mongo.repsert (Mongo.select [ "_id" =: tid ] "records")
+                                     [ "$pushAll" =: [ (u.show $ pos) =: ISet.toList cids ] ]
 
 process :: PFEGConfig -> IO ()
 process session =
