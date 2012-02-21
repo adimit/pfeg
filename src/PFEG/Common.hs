@@ -98,8 +98,8 @@ c28 = fromIntegral.fromEnum
 {-# INLINE c28 #-}
 
 nl8, tab8 :: Word8
-nl8  = c28 $! '\n'
-tab8 = c28 $! '\t'
+nl8  = c28 '\n'
+tab8 = c28 '\t'
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a
