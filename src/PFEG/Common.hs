@@ -33,7 +33,7 @@ import Data.Text.Encoding (decodeUtf8)
 import Data.HashMap.Strict (HashMap)
 
 import Data.ByteString (ByteString)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO,liftIO)
 import Control.Monad (forever)
 import Control.Concurrent.Chan
 import Data.Attoparsec.Iteratee
@@ -116,7 +116,7 @@ trd3    (_,_,c) =  c
 corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
 corpusI = parserToIteratee sentenceP
 
-countChunksI :: Chan Int -> I.Iteratee ByteString IO ()
+countChunksI :: (MonadIO m) => Chan Int -> I.Iteratee ByteString m ()
 countChunksI log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
                                 in liftIO (writeChan log i') >> I.liftI (step i')
