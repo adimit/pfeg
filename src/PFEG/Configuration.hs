@@ -44,7 +44,6 @@ data PFEGConfig = PFEGConfig
     { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
     , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
-    , indexDB    :: Connection
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
@@ -75,7 +74,6 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
-    disconnect $ indexDB pfeg
     case pfegMode pfeg of m@Match{} -> hClose $ resultLog m
                           _ -> return ()
 
@@ -93,7 +91,6 @@ initialize modeString cfg = do
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
-    index <- getValue cfg "databases" "index" >>= liftC . connectPostgreSQL
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
@@ -115,7 +112,6 @@ initialize modeString cfg = do
     return PFEGConfig { pfegMode   = runas
                       , contextDB  = ctxt
                       , statusLine = statC
-                      , indexDB    = index
                       , targets    = targs
                       , chunkSize  = csize }
 
