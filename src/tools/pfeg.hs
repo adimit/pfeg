@@ -37,7 +37,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when,forever,liftM,foldM,when,void)
 
 import Database.HDBC
-import Database.HDBC.Sqlite3
+import Database.HDBC.PostgreSQL
 
 import Graphics.Vty.Terminal
 
@@ -117,7 +117,7 @@ handleCorpus proc session (cName,cFile) = do
      runReaderT iteratee session
      killThread threadID
      case pfegMode session of
-          Record{} -> commitTo $ contextDB session
+          Record{} -> commitTo $ database session
           _        -> return ()
 
 commitTo :: Connection -> IO ()
@@ -158,19 +158,19 @@ process session =
             killThread threadID
             commitTo $ indexDB session
         m@Record{} -> do
-            insertCtxtS <- prepare (contextDB session) insertCtxtSQL
-            insertTrgtS <- prepare (contextDB session) insertTargetSQL
-            updateS     <- prepare (contextDB session) updateSQL
+            insertCtxtS <- prepare (database session) insertCtxtSQL
+            insertTrgtS <- prepare (database session) insertTargetSQL
+            updateS     <- prepare (database session) updateSQL
             let sql = RecordSQL { updateTarget  = updateS
                                 , insertContext = insertCtxtS
                                 , insertTarget  = insertTrgtS }
-            workOnCorpora (recordF sql) session (corpora m)
+            workOnCorpora (recordF (unigramIDs m) sql) session (corpora m)
         m@Match{} -> do
-            sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
+            sql <- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
             threadID <- forkIO . void $
                 runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
-            workOnCorpora (matchF logVar (targetIDs m) sql) session (corpora m)
+            workOnCorpora (matchF (unigramIDs m) logVar (targetIDs m) sql) session (corpora m)
             killThread threadID
 
 recordF :: SQL -> Item Text -> PFEG ()
@@ -184,17 +184,16 @@ recordF sql i = do
          void.liftIO $ execute (insertContext sql) pattern
          void.liftIO $ execute (insertTarget  sql) pattern')
 
-matchF :: MVar LogData -> IntMap Text -> MatcherInit -> Item Text -> PFEG ()
-matchF logVar tids sql i = do
-    results <- mapM (matchAPattern tids sql i) matchmodes
+matchF :: UnigramIDs -> MVar LogData -> IntMap Text -> MatcherInit -> Item Text -> PFEG ()
+matchF uids logVar tids sql i = do
+    results <- mapM (matchAPattern uids tids sql i) matchmodes
     liftIO $ putMVar logVar (LogData i (zip matchmodes results))
 
 -- given a pattern, matcherInit and an Item, give a result from the database
 -- helper function for @matchF@.
-matchAPattern :: IntMap Text -> MatcherInit -> Item Text -> MatchPattern -> PFEG Result
-matchAPattern tids sql i mm = do
-    cf <- ask
-    let pattern = item2SQLp mm (indexItem (unigramID cf) i)
+matchAPattern :: UnigramIDs -> IntMap Text -> MatcherInit -> Item Text -> MatchPattern -> PFEG Result
+matchAPattern uids tids sql i mm = do
+    let pattern = item2SQLp mm (indexItem uids i)
     case mm `M.lookup` sql of
          Nothing -> error "IMPOSSIBRU!"
          (Just s) -> do
