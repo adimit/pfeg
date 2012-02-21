@@ -22,6 +22,12 @@ import Data.Foldable (Foldable)
 import Safe (atMay)
 
 import Prelude hiding (null)
+import Codec.Digest.SHA.Monad
+
+import Data.Binary.BitBuilder
+
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString as Strict
 
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
 
@@ -30,6 +36,11 @@ data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
                    , sItem :: Context i -- ^ Surface part of the item
                    , target :: i-- ^ Target functional element of the item
                    } deriving (Functor,Foldable,Traversable,Show)
+
+instance Hashable (Item Int) where
+    update (Item { pItem = (Context pI), lItem = (Context lI), sItem = (Context sI) }) =
+           update . Strict.concat . Lazy.toChunks . Lazy.concat $
+                    map (toLazyByteString . fromBits 32) (pI++lI++sI)
 
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]

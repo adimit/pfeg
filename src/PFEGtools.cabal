@@ -18,7 +18,7 @@ Executable unigramTable
     Main-is:          tools/unigramTable.hs
 
 Executable pfeg
-    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl, ReadArgs, hsini, iteratee, split, hashable, containers
+    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl, ReadArgs, hsini, iteratee, split, hashable, containers, SHA2
     ghc-options:      -O2 -Wall -threaded -rtsopts
     Main-is:          tools/pfeg.hs
 
