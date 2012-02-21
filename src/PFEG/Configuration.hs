@@ -43,7 +43,7 @@ type UnigramIDs = HashMap Text Int
 data PFEGConfig = PFEGConfig
     { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
     , statusLine :: Chan Int -- ^ Status update channel
-    , contextDB  :: Connection -- ^ The connection to the main database
+    , database   :: Connection -- ^ The connection to the main database
     , targets    :: [Text] -- ^ Targets for this run
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
@@ -73,7 +73,7 @@ liftC m = C (lift m)
 -- | Free all resources that were initialized earlier.
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
-    disconnect $ contextDB pfeg
+    disconnect $ database pfeg
     case pfegMode pfeg of m@Match{} -> hClose $ resultLog m
                           _ -> return ()
 
@@ -85,9 +85,17 @@ configurePFEG match f = do
          (Left err)  -> return . Left . ParseError $ show err
          (Right cfg) -> runErrorT $ runC $ initialize match cfg
 
+getPostgresOpts :: Config -> Configurator [(String,String)]
+getPostgresOpts cfg = do
+    host   <- getValue cfg "databases" "host"
+    user   <- getValue cfg "databases" "user"
+    dbName <- getValue cfg "databases" "dbName"
+    return [ ("host",host) , ("user",user) , ("dbname",dbName) ]
+
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
-    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectPostgreSQL
+    opts <- getPostgresOpts cfg
+    db  <- liftC . connectPostgreSQL $ unwords [ k ++ "=" ++ v | (k,v) <- opts ]
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
@@ -110,7 +118,7 @@ initialize modeString cfg = do
                         return Record { corpora = train, unigramIDs = uids }
                   RunUnigrams -> return Unigrams
     return PFEGConfig { pfegMode   = runas
-                      , contextDB  = ctxt
+                      , database   = db
                       , statusLine = statC
                       , targets    = targs
                       , chunkSize  = csize }
