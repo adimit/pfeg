@@ -55,7 +55,7 @@ data ModeConfig = Record { corpora   :: [Corpus]
                          , unigramIDs  :: UnigramIDs  -- ^ Unigram ids
                          , majorityBaseline :: String
                          , resultLog :: Handle }
-                | Unigrams
+                | Unigrams { corpora :: [Corpus] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError)
@@ -116,7 +116,10 @@ initialize modeString cfg = do
                         uids  <- prepareUnigrams cfg
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train, unigramIDs = uids }
-                  RunUnigrams -> return Unigrams
+                  RunUnigrams -> do
+                        train <- getCorpusSet cfg "main" "trainon"
+                        test  <- getCorpusSet cfg "main" "teston"
+                        return Unigrams { corpora = train ++ test }
     return PFEGConfig { pfegMode   = runas
                       , database   = db
                       , statusLine = statC
