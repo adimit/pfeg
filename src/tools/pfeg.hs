@@ -117,8 +117,8 @@ handleCorpus proc session (cName,cFile) = do
      runReaderT iteratee session
      killThread threadID
      case pfegMode session of
-          (Record _) -> commitTo $ contextDB session
-          _          -> return ()
+          Record{} -> commitTo $ contextDB session
+          _        -> return ()
 
 commitTo :: Connection -> IO ()
 commitTo conn = do
@@ -157,7 +157,7 @@ process session =
             indexF selectAllCtxtS insertIndexS logChan
             killThread threadID
             commitTo $ indexDB session
-        m@(Record _) -> do
+        m@Record{} -> do
             insertCtxtS <- prepare (contextDB session) insertCtxtSQL
             insertTrgtS <- prepare (contextDB session) insertTargetSQL
             updateS     <- prepare (contextDB session) updateSQL
@@ -165,7 +165,7 @@ process session =
                                 , insertContext = insertCtxtS
                                 , insertTarget  = insertTrgtS }
             workOnCorpora (recordF sql) session (corpora m)
-        m@(Match _ _ _ _) -> do
+        m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (contextDB session) matchmodes
             logVar <- newEmptyMVar
             threadID <- forkIO . void $
