@@ -13,6 +13,10 @@ module PFEG.SQL
       -- * Index SQL
     , insertIndexSQL
     , selectAllCtxtSQL
+      -- * Unigram SQL
+    , insertUnigram
+    , selectAllUnigrams
+    , updateUnigram
     ) where
 
 import Database.HDBC
@@ -27,9 +31,14 @@ import Data.Convertible.Base (Convertible)
 
 import Prelude hiding (null)
 
-{- 
- - reverse index
- - .schema
+{-
+CREATE TABLE unigrams
+    ( id SERIAL PRIMARY KEY
+    , form TEXT UNIQUE NOT NULL
+    , count INTEGER NOT NULL);
+
+reverse index
+.schema
 
 CREATE TABLE rindex (token int, cid int, primary key (token,cid));
 
@@ -45,6 +54,15 @@ UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
 CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
 
  -}
+
+insertUnigram :: String
+insertUnigram = "INSERT INTO unigrams (count,form) VALUES (?,?)"
+
+updateUnigram :: String
+updateUnigram = "UPDATE unigrams SET count = count+? WHERE form=?"
+
+selectAllUnigrams :: String
+selectAllUnigrams = "SELECT id,form FROM unigrams;"
 
 insertIndexSQL :: String
 insertIndexSQL = "INSERT OR IGNORE INTO rindex (token,cid) VALUES (?,?)"
