@@ -126,37 +126,9 @@ commitTo conn = do
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
 
-indexF :: Statement -> Statement -> Chan Int -> IO ()
-indexF selS insS logChan =
-    execute selS [] >> void (execStateT index 0)
-    where index :: StateT Int IO ()
-          index = do
-             row <- liftIO $ fetchRow selS
-             case row of
-                  Nothing -> return ()
-                  Just (cid:ts) -> do
-                     m <- get
-                     liftIO $ executeMany insS (map (:[cid]) ts)
-                     when (mod m 1000 == 0) (liftIO $ writeChan logChan m)
-                     put $! (m+1)
-                     index
-                  xs -> error $ "Can't use this to index: " ++ show xs
-
 process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
-        Index -> do
-            insertIndexS  <- prepare (indexDB session) insertIndexSQL
-            selectAllCtxtS <- prepare (contextDB session) selectAllCtxtSQL
-            putStrLn "Querying context db for size."
-            (totalItems::Int) <- liftM (fromSql.head.head) $
-                quickQuery' (contextDB session) "SELECT count(*) FROM ctxt" []
-            putStrLn $ "Size is " ++ show totalItems
-            logChan <- newChan
-            threadID <- forkIO $ logger totalItems logChan
-            indexF selectAllCtxtS insertIndexS logChan
-            killThread threadID
-            commitTo $ indexDB session
         m@Record{} -> do
             insertCtxtS <- prepare (database session) insertCtxtSQL
             insertTrgtS <- prepare (database session) insertTargetSQL
@@ -172,11 +144,17 @@ process session =
                 runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
             workOnCorpora (matchF (unigramIDs m) logVar (targetIDs m) sql) session (corpora m)
             killThread threadID
+        Unigrams{} -> do
+            updateUnigramS <- prepare (database session) updateUnigram
+            insertUnigramS <- prepare (database session) updateUnigram
+            runReaderT (runUnigram insertUnigramS updateUnigramS) session
 
-recordF :: SQL -> Item Text -> PFEG ()
-recordF sql i = do
-    cf <- ask
-    let item'    = indexItem (unigramID cf) i
+runUnigram :: Statement -> Statement -> PFEG ()
+runUnigram = undefined
+
+recordF :: UnigramIDs -> SQL -> Item Text -> PFEG ()
+recordF uids sql i = do
+    let item'    = indexItem uids i
         pattern  = item2SQL item' -- just the slp forms
         pattern' = toSql (target item'):pattern -- the slp forms with target prepended
     numRows <- liftIO $ execute (updateTarget sql) pattern'
