@@ -14,7 +14,7 @@ import Data.Ini.Types
 import Data.Ini.Reader
 import Data.Ini
 import Database.HDBC
-import Database.HDBC.Sqlite3
+import Database.HDBC.PostgreSQL
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
@@ -42,7 +42,6 @@ type UnigramIDs = HashMap Text Int
 
 data PFEGConfig = PFEGConfig
     { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
-    , unigramID  :: UnigramIDs -- ^ Unigram ids
     , statusLine :: Chan Int -- ^ Status update channel
     , contextDB  :: Connection -- ^ The connection to the main database
     , indexDB    :: Connection
@@ -50,20 +49,22 @@ data PFEGConfig = PFEGConfig
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
 
-data ModeConfig = Record { corpora   :: [Corpus] }
+data ModeConfig = Record { corpora   :: [Corpus]
+                         , unigramIDs  :: UnigramIDs } -- ^ Unigram ids
                 | Match  { corpora   :: [Corpus]
                          , targetIDs :: IntMap Text
+                         , unigramIDs  :: UnigramIDs  -- ^ Unigram ids
                          , majorityBaseline :: String
                          , resultLog :: Handle }
-                | Index
+                | Unigrams
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError)
 
-data RunMode = RunRecord | RunMatch | RunIndex
+data RunMode = RunRecord | RunMatch | RunUnigrams
 detectMode :: String -> Configurator RunMode
 detectMode "match" = return RunMatch
-detectMode "index" = return RunIndex
+detectMode "unigrams" = return RunUnigrams
 detectMode "record" = return RunRecord
 detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
 
@@ -75,7 +76,7 @@ deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ contextDB pfeg
     disconnect $ indexDB pfeg
-    case pfegMode pfeg of m@(Match _ _ _ _) -> hClose $ resultLog m
+    case pfegMode pfeg of m@(Match _ _ _ _ _) -> hClose $ resultLog m
                           _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
@@ -88,15 +89,15 @@ configurePFEG match f = do
 
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
-    uids  <- prepareUnigrams cfg
-    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectSqlite3
+    ctxt  <- getValue cfg "databases" "contexts" >>= liftC . connectPostgreSQL
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
-    index <- getValue cfg "databases" "index" >>= liftC . connectSqlite3
+    index <- getValue cfg "databases" "index" >>= liftC . connectPostgreSQL
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
+                        uids  <- prepareUnigrams cfg
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         majB  <- getValue cfg "main" "majorityBaseline"
@@ -104,13 +105,14 @@ initialize modeString cfg = do
                         return Match { corpora   = test
                                      , targetIDs = tids
                                      , majorityBaseline = majB
-                                     , resultLog = resL }
+                                     , resultLog = resL
+                                     , unigramIDs = uids }
                   RunRecord -> do
+                        uids  <- prepareUnigrams cfg
                         train <- getCorpusSet cfg "main" "trainon"
-                        return Record { corpora = train }
-                  RunIndex -> return Index
+                        return Record { corpora = train, unigramIDs = uids }
+                  RunUnigrams -> return Unigrams
     return PFEGConfig { pfegMode   = runas
-                      , unigramID  = uids
                       , contextDB  = ctxt
                       , statusLine = statC
                       , indexDB    = index
@@ -142,7 +144,7 @@ readChunkSize cfg = do
 prepareUnigrams :: Config -> Configurator UnigramIDs
 prepareUnigrams cfg = do
     val  <- getValue cfg "databases" "unigrams"
-    conn <- liftC $ connectSqlite3 val
+    conn <- liftC $ connectPostgreSQL val
     stmt <- liftC $ prepare conn "SELECT f,id FROM unigrams"
     uids <- liftC $ execStateT (cacheHash stmt) M.empty
     liftC $ disconnect conn
