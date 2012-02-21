@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables,BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
 import PFEG.SQL
@@ -15,7 +15,6 @@ import qualified Data.IntMap as IM
 
 import qualified Data.Iteratee as I
 import Data.Iteratee.IO
-import Data.Iteratee.Base
 import Data.ByteString (ByteString)
 import Data.Maybe (fromMaybe)
 
@@ -74,12 +73,6 @@ data SQL = RecordSQL { updateTarget  :: Statement
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
-countChunksI' :: Chan Int -> Iteratee ByteString (ReaderT PFEGConfig IO) ()
-countChunksI' log = I.liftI (step 0)
-    where step (!i) (Chunk _) = let i' = i+1
-                                in liftIO (writeChan log i') >> I.liftI (step i')
-          step _    stream    = I.idone () stream
-
 data LogState = LogState { currentItem :: Int }
 
 logResult :: String -> Handle -> MVar LogData -> StateT LogState IO ()
@@ -112,7 +105,7 @@ handleCorpus proc session (cName,cFile) = do
      putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
      threadID <- forkIO $ logger (fromIntegral csize `div` chunkSize session) logVar
      let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
-                        [ countChunksI' logVar
+                        [ countChunksI logVar
                         , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM proc.getItems (targets session))])
      runReaderT iteratee session
      killThread threadID
