@@ -14,9 +14,9 @@ module PFEG.SQL
     , insertIndexSQL
     , selectAllCtxtSQL
       -- * Unigram SQL
-    , insertUnigram
+    , upsertUnigram
+    , unigramsUpsertFunction
     , selectAllUnigrams
-    , updateUnigram
     ) where
 
 import Database.HDBC
@@ -55,11 +55,28 @@ CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
 
  -}
 
-insertUnigram :: String
-insertUnigram = "INSERT INTO unigrams (count,form) VALUES (?,?)"
+unigramsUpsertFunction :: String
+unigramsUpsertFunction = unlines
+    [ "CREATE OR REPLACE FUNCTION unigram_upsert (f TEXT, c INT) RETURNS VOID AS"
+    , "$$"
+    , "BEGIN"
+    ,   "LOOP"
+    ,     "UPDATE unigrams SET count = count+c WHERE form=f;"
+    ,     "IF found THEN"
+    ,       "RETURN;"
+    ,     "END IF;"
+    ,     "BEGIN"
+    ,       "INSERT INTO unigrams(form,count) VALUES (f,c);"
+    ,       "RETURN;"
+    ,     "EXCEPTION WHEN unique_violation THEN"
+    ,     "END;"
+    ,     "END LOOP;"
+    , "END;"
+    , "$$"
+    , "LANGUAGE plpgsql;" ]
 
-updateUnigram :: String
-updateUnigram = "UPDATE unigrams SET count = count+? WHERE form=?"
+upsertUnigram :: String
+upsertUnigram = "SELECT unigram_upsert(?,?)"
 
 selectAllUnigrams :: String
 selectAllUnigrams = "SELECT id,form FROM unigrams;"
