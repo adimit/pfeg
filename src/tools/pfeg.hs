@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Main where
 
 import PFEG.Types
@@ -31,11 +31,10 @@ import Control.Concurrent.Chan
 import Control.Concurrent (ThreadId,killThread,forkIO)
 import Control.Exception (bracket)
 
+import Control.Monad.CatchIO (MonadCatchIO)
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when,forever,liftM,foldM,when,void)
+import Control.Monad.Reader
 
 import Database.HDBC
 import Database.HDBC.PostgreSQL
@@ -45,7 +44,8 @@ import Graphics.Vty.Terminal
 import PFEG.Configuration
 import ReadArgs
 
-type PFEG a = ReaderT PFEGConfig IO a
+newtype PFEG a = PFEG { runP :: ReaderT PFEGConfig IO a }
+        deriving (Functor, Monad, MonadIO, MonadReader PFEGConfig, MonadCatchIO)
 
 data LogData = LogData
     { logItem    :: Item Text
@@ -100,13 +100,16 @@ type ItemProcessor = Item Text -> PFEG ()
 workOnCorpora :: ItemProcessor -> PFEGConfig -> [Corpus] -> IO ()
 workOnCorpora processor session = mapM_ (handleCorpus processor session)
 
+runPFEG :: PFEG a -> PFEGConfig -> IO a
+runPFEG k = runReaderT (runP k)
+
 handleCorpus :: ItemProcessor -> PFEGConfig -> Corpus -> IO ()
 handleCorpus proc session c@(_cName,cFile) = do
-     (threadID,logVar) <- runReaderT (forkLogger c) session
+     (threadID,logVar) <- runPFEG (forkLogger c) session
      let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                         [ countChunksI logVar
                         , I.joinI $ I.convStream corpusI (I.mapChunksM_ $ mapM proc.getItems (targets session))])
-     runReaderT iteratee session
+     runPFEG iteratee session
      killThread threadID
      case pfegMode session of
           Record{} -> commitTo $ database session
@@ -139,7 +142,7 @@ process session =
         Unigrams{} -> do
             prepare (database session) unigramsUpsertFunction >>= executeRaw
             upsertS <- prepare (database session) upsertUnigram
-            runReaderT (runUnigram upsertS) session
+            runPFEG (runUnigram upsertS) session
 
 runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
