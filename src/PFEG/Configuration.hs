@@ -87,10 +87,10 @@ configurePFEG match f = do
 
 getPostgresOpts :: Config -> Configurator [(String,String)]
 getPostgresOpts cfg = do
-    host   <- getValue cfg "databases" "host"
+    -- host   <- getValue cfg "databases" "host"
     user   <- getValue cfg "databases" "user"
     dbName <- getValue cfg "databases" "dbName"
-    return [ ("host",host) , ("user",user) , ("dbname",dbName) ]
+    return [ ("user",user) , ("dbname",dbName)  ]
 
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
