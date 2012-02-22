@@ -7,22 +7,10 @@ Synopsis:      Tools for predicting functional elements in German.
 Category:      NLP
 Build-type:    Simple
 
-Executable wac2tt
-    Build-Depends:    base, bytestring, zlib
-    Main-is:          tools/wac2tt.hs
-    ghc-options:      -O2 -Wall
-
-Executable unigramTable
-    Build-Depends:    bytestring, base, text, iteratee, unordered-containers, HDBC, HDBC-sqlite3
-    ghc-options:      -O2 -Wall
-    Main-is:          tools/unigramTable.hs
-
 Executable pfeg
-    Build-Depends:    HDBC, HDBC-sqlite3, base, text, vty, MissingH, mtl, ReadArgs, hsini, iteratee, split, hashable, containers, SHA2
-    ghc-options:      -O2 -Wall -threaded -rtsopts
-    Main-is:          tools/pfeg.hs
-
-Library
-    Build-Depends:    time, text, attoparsec, binary, convertible, attoparsec-iteratee, iteratee, transformers, safe
-    exposed-modules:  PFEG.Common, PFEG.Types, PFEG.SQL, PFEG.Context
-    ghc-options:      -O2 -Wall
+    Build-Depends: HDBC, HDBC-postgresql, base, text, vty, MissingH, mtl, ReadArgs,
+                   hsini, iteratee, split, hashable, containers, SHA2, bytestring,
+                   binary-strict, time, text, attoparsec, binary, convertible,
+                   attoparsec-iteratee, transformers, safe, unordered-containers
+    ghc-options:   -O2 -Wall -threaded -rtsopts
+    Main-is:       tools/pfeg.hs
