@@ -144,24 +144,22 @@ process session =
 runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
     session <- ask
-    (histChan,cmdVar,threadID) <- liftIO $ do
-        histChan <- newChan
-        cmdVar   <- newEmptyMVar
-        threadID <- forkIO $ histogramCommitter upsert histChan cmdVar
-        return (histChan,cmdVar,threadID)
-    mapM_ (\c -> acquireHistogram c >>= liftIO . writeChan histChan . Just) (corpora.pfegMode $ session)
-    liftIO $ do writeChan histChan Nothing
-                putStrLn "Waiting for db…"
-                takeMVar cmdVar
+    (histVar,threadID) <- liftIO $ do
+        histVar <- newEmptyMVar
+        threadID <- forkIO $ histogramCommitter upsert histVar
+        return (histVar,threadID)
+    mapM_ (\c -> acquireHistogram c >>= liftIO . putMVar histVar . Just) (corpora.pfegMode $ session)
+    liftIO $ do putStrLn "Waiting for db…"
+                putMVar histVar Nothing
                 commitTo $ database session
                 killThread threadID
 
-histogramCommitter :: Statement -> Chan (Maybe Histogram) -> MVar () -> IO ()
-histogramCommitter upsert histChan cmdVar = loop
+histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()
+histogramCommitter upsert histVar = loop
     where loop = do
-          chanData <- readChan histChan
+          chanData <- takeMVar histVar
           case chanData of
-               Nothing -> putMVar cmdVar ()
+               Nothing -> return ()
                (Just hist) -> executeMany upsert
                     (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist)) >> loop
 
