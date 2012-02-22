@@ -173,7 +173,7 @@ acquireHistogram c@(cName,cFile) = do
                             [ countChunksI logVar, I.joinI $ I.convStream corpusI uniI ])
         histogram <- execStateT iteratee M.empty
         killThread threadID
-        putStrLn $ "Done processing " ++ cName
+        putStrLn $ "Done processing " ++ cName ++ "\n. Waiting for DB…"
         return histogram
 
 forkLogger :: Corpus -> PFEG (ThreadId,Chan Int)
