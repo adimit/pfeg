@@ -18,6 +18,9 @@ module PFEG.SQL
     , unigramsUpsertFunction
     , selectAllUnigrams
     , insertUnigram
+      -- * Records SQL
+    , recordsUpsertFunction
+    , upsertRecord
     ) where
 
 import Database.HDBC
@@ -38,22 +41,10 @@ CREATE TABLE unigrams
     , form TEXT UNIQUE NOT NULL
     , count INTEGER NOT NULL);
 
-reverse index
-.schema
-
-CREATE TABLE rindex (token int, cid int, primary key (token,cid));
-
- - contextdb
- - .schema
-
-CREATE TABLE ctxt (id integer primary key autoincrement, s1 integer,s2
-integer,s3 integer,s4 integer,s5 integer,s6 integer,l1 integer,l2 integer,l3
-integer,l4 integer,l5 integer,l6 integer,p1 integer,p2 integer,p3 integer,p4
-integer,p5 integer,p6 integer,
-UNIQUE(s1,s2,s3,s4,s5,s6,l1,l2,l3,l4,l5,l6,p1,p2,p3,p4,p5,p6));
-
-CREATE TABLE targets (id integer, t integer, c integer, primary key(id,t));
-
+CREATE TABLE records
+    ( id BLOB PRIMARY KEY
+    , record INT[] NOT NULL
+    , counts INT[] NOT NULL );
  -}
 
 unigramsUpsertFunction :: String
@@ -75,6 +66,29 @@ unigramsUpsertFunction = unlines
     , "END;"
     , "$$"
     , "LANGUAGE plpgsql;" ]
+
+recordsUpsertFunction :: String
+recordsUpsertFunction = unlines
+    [ "CREATE OR REPLACE FUNCTION records_upsert (h BLOB, t INT, r INT[]) RETURNS VOID AS"
+    , "$$"
+    , "BEGIN"
+    ,   "LOOP"
+    ,     "UPDATE records SET counts[t] = counts[t]+1 WHERE id=h;"
+    ,     "IF found THEN"
+    ,       "RETURN"
+    ,     "END IF;"
+    ,     "BEGIN"
+    ,       "INSERT INTO records(id,record,counts) VALUES (h,r, NEW ARRAY?);"
+    ,       "RETURN;"
+    ,     "EXCEPTION WHEN unique_violation THEN"
+    ,     "END;"
+    ,   "END LOOP;"
+    , "END"
+    , "$$"
+    , "LANGUAGE plpgsql;" ]
+
+upsertRecord :: String
+upsertRecord = "SELECT records_upsert(?,?,{"++ questionmarks 18++"})"
 
 upsertUnigram :: String
 upsertUnigram = "SELECT unigram_upsert(?,?)"
