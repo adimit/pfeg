@@ -44,9 +44,8 @@ instance Hashable (Item Int) where
 
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]
-getItems t s = let s_no_punct = filter (\(_,_,p) -> T.head p /= '$') s -- punctuation is tagged starting with $.
-                   target_indices = findIndices (\(w,_,_) -> w `elem` t) s_no_punct
-               in  map (getItem s_no_punct) target_indices
+getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
+               in  map (getItem s) target_indices
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text

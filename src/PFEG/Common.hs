@@ -30,9 +30,11 @@ import qualified Data.Text as X
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
+import Data.Maybe (catMaybes)
 import Data.HashMap.Strict (HashMap)
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as B
 import Control.Monad.IO.Class (MonadIO,liftIO)
 import Control.Monad (forever)
 import Control.Concurrent.Chan
@@ -81,17 +83,19 @@ doTimed_ f = fmap snd (doTimed f)
 renderS :: NominalDiffTime -> String
 renderS = renderSecs.round
 
-wordP :: Parser (Word Text)
+wordP :: Parser (Maybe (Word Text))
 wordP = do surface <- takeTill (==tab8)
            tag     <- skip (==tab8) *> takeTill (==tab8)
            lemma   <- skip (==tab8) *> takeTill (==nl8)
            skip (==nl8)
-           return ( X.toCaseFold.decodeUtf8 $ surface
-                  ,              decodeUtf8   tag
-                  , X.toCaseFold.decodeUtf8 $ lemma)
+           if B.head tag == c28 '$'
+              then return Nothing
+              else return $ Just ( X.toCaseFold.decodeUtf8 $ surface
+                                 ,              decodeUtf8   tag
+                                 , X.toCaseFold.decodeUtf8 $ lemma)
 
 sentenceP :: Parser (Sentence Text)
-sentenceP = return =<< wordP `manyTill` word8 nl8 <* skipWhile (==nl8)
+sentenceP = return.catMaybes =<< wordP `manyTill` word8 nl8 <* skipWhile (==nl8)
 
 c28 :: Char -> Word8
 c28 = fromIntegral.fromEnum
