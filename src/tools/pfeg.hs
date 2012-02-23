@@ -48,7 +48,7 @@ newtype PFEG a = PFEG { runP :: ReaderT PFEGConfig IO a }
         deriving (Functor, Monad, MonadIO, MonadReader PFEGConfig, MonadCatchIO)
 
 data LogData = LogData
-    { logItem    :: Item Text
+    { logItem    :: !(Item Text)
     , logResults :: [(MatchPattern,Result)] }
 
 main :: IO ()
@@ -75,7 +75,7 @@ data SQL = RecordSQL { updateTarget  :: Statement
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
-data LogState = LogState { currentItem :: Int }
+data LogState = LogState { currentItem :: !Int }
 
 logResult :: String -> Handle -> MVar LogData -> StateT LogState IO ()
 logResult majB h resV = forever log -- who wants to be forever log
