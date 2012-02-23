@@ -140,22 +140,20 @@ process session =
             workOnCorpora (matchF (unigramIDs m) logVar (targetIDs m) sql) session (corpora m)
             killThread threadID
         Unigrams{} -> do
-            prepare (database session) unigramsUpsertFunction >>= executeRaw
-            upsertS <- prepare (database session) upsertUnigram
-            runPFEG (runUnigram upsertS) session
+            queryResult <- quickQuery (database session) "SELECT * FROM unigrams WHERE id=1" []
+            statement <- if queryResult == []
+               then prepare (database session) insertUnigram
+               else prepare (database session) unigramsUpsertFunction
+                    >>= executeRaw >> prepare (database session) upsertUnigram
+            runPFEG (runUnigram statement) session
 
 runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
     session <- ask
-    (histVar,threadID) <- liftIO $ do
-        histVar <- newEmptyMVar
-        threadID <- forkIO $ histogramCommitter upsert histVar
-        return (histVar,threadID)
-    mapM_ (\c -> acquireHistogram c >>= liftIO . putMVar histVar . Just) (corpora.pfegMode $ session)
+    hist <- foldM acquireHistogram M.empty (corpora.pfegMode $ session)
     liftIO $ do putStrLn "Waiting for db…"
-                putMVar histVar Nothing
+                executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
                 commitTo $ database session
-                killThread threadID
 
 histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()
 histogramCommitter upsert histVar = loop
@@ -167,16 +165,17 @@ histogramCommitter upsert histVar = loop
                     (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist)) >> loop
 
 {- TODO: this has to be merged somehow with handleCorpus, which does something pretty similar. -}
-acquireHistogram :: Corpus -> PFEG Histogram
-acquireHistogram c@(cName,cFile) = do
+acquireHistogram :: Histogram -> Corpus -> PFEG Histogram
+acquireHistogram hist c@(cName,cFile) = do
     session <- ask
+    (threadID,logVar) <- forkLogger c
     liftIO $ do
-        (threadID,logVar) <- runReaderT (forkLogger c) session
         let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
-                            [ countChunksI logVar, I.joinI $ I.convStream corpusI uniI ])
-        histogram <- execStateT iteratee M.empty
+                       [ countChunksI logVar, I.joinI $ I.convStream corpusI uniI ])
+
+        histogram <- execStateT iteratee hist
         killThread threadID
-        putStrLn $ "Done processing " ++ cName ++ "\n. Waiting for DB…"
+        putStrLn $ "\nDone processing " ++ cName
         return histogram
 
 forkLogger :: Corpus -> PFEG (ThreadId,Chan Int)

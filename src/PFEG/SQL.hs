@@ -17,6 +17,7 @@ module PFEG.SQL
     , upsertUnigram
     , unigramsUpsertFunction
     , selectAllUnigrams
+    , insertUnigram
     ) where
 
 import Database.HDBC
@@ -70,13 +71,16 @@ unigramsUpsertFunction = unlines
     ,       "RETURN;"
     ,     "EXCEPTION WHEN unique_violation THEN"
     ,     "END;"
-    ,     "END LOOP;"
+    ,   "END LOOP;"
     , "END;"
     , "$$"
     , "LANGUAGE plpgsql;" ]
 
 upsertUnigram :: String
 upsertUnigram = "SELECT unigram_upsert(?,?)"
+
+insertUnigram :: String
+insertUnigram = "INSERT INTO unigrams (form,count) VALUES (?,?)"
 
 selectAllUnigrams :: String
 selectAllUnigrams = "SELECT id,form FROM unigrams;"
