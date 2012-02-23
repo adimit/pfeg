@@ -151,8 +151,9 @@ runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
     session <- ask
     hist <- foldM acquireHistogram M.empty (corpora.pfegMode $ session)
-    liftIO $ do putStrLn "Waiting for db…"
-                executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
+    liftIO $ do putStr "Waiting for db…"
+                t <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
+                putStrLn $ "\rDB took " ++ show t
                 commitTo $ database session
 
 histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()
