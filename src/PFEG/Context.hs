@@ -37,6 +37,8 @@ data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
                    , target :: i-- ^ Target functional element of the item
                    } deriving (Functor,Foldable,Traversable,Show)
 
+-- | Hash an item without targets. I.e. items with different targets which are
+-- otherwise the same will hash to the same value!
 instance Hashable (Item Int) where
     update (Item { pItem = (Context pI), lItem = (Context lI), sItem = (Context sI) }) =
            update . Strict.concat . Lazy.toChunks . Lazy.concat $
