@@ -42,7 +42,7 @@ CREATE TABLE unigrams
     , count INTEGER NOT NULL);
 
 CREATE TABLE records
-    ( id BLOB PRIMARY KEY
+    ( id sha256 PRIMARY KEY
     , record INT[] NOT NULL
     , counts INT[] NOT NULL );
  -}
@@ -67,18 +67,26 @@ unigramsUpsertFunction = unlines
     , "$$"
     , "LANGUAGE plpgsql;" ]
 
-recordsUpsertFunction :: String
-recordsUpsertFunction = unlines
-    [ "CREATE OR REPLACE FUNCTION records_upsert (h BLOB, t INT, r INT[]) RETURNS VOID AS"
+zeros :: Int -> String
+zeros range = intersperse ',' $ replicate range '0'
+
+recordsUpsertFunction :: Int -> String
+recordsUpsertFunction target_count = unlines
+    [ "CREATE OR REPLACE FUNCTION records_upsert (h bytea, t INT, r INT[]) RETURNS VOID AS"
     , "$$"
+    , "DECLARE"
+    ,   "record_hash sha256 = sha256(h);"
     , "BEGIN"
     ,   "LOOP"
-    ,     "UPDATE records SET counts[t] = counts[t]+1 WHERE id=h;"
+    ,     "UPDATE records SET counts[t] = counts[t]+1 WHERE id=record_hash;"
     ,     "IF found THEN"
-    ,       "RETURN"
+    ,       "RETURN;"
     ,     "END IF;"
+    ,     "DECLARE"
+    ,        "temp_arr int[] = '{"++ zeros target_count ++"}';"
     ,     "BEGIN"
-    ,       "INSERT INTO records(id,record,counts) VALUES (h,r, NEW ARRAY?);"
+    ,       "temp_arr[t] = 1;"
+    ,       "INSERT INTO records(id,record,counts) VALUES (record_hash,r, temp_arr);"
     ,       "RETURN;"
     ,     "EXCEPTION WHEN unique_violation THEN"
     ,     "END;"
@@ -88,7 +96,7 @@ recordsUpsertFunction = unlines
     , "LANGUAGE plpgsql;" ]
 
 upsertRecord :: String
-upsertRecord = "SELECT records_upsert(?,?,{"++ questionmarks 18++"})"
+upsertRecord = "SELECT records_upsert(?,?,?)"
 
 upsertUnigram :: String
 upsertUnigram = "SELECT unigram_upsert(?,?)"
@@ -147,10 +155,10 @@ letters c = map ((c:) . show)
 questionmarks :: Int -> String
 questionmarks range = intersperse ',' $ replicate range '?'
 
--- Convert an item's payload to @SqlValue@ *without* the target prepended.
-item2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
-item2SQL (Item (Context ps) (Context ls) (Context ss) _t) =
-    map toSql ss ++ map toSql ls ++ map toSql ps
+-- Convert an item's payload to Postgres Array String representation *without* the target.
+item2SQL :: Item Int -> String
+item2SQL Item { pItem = (Context ps), lItem = (Context ls), sItem = (Context ss) } =
+    '{' : intercalate "," (map show (ss++ls++ps)) ++ "}"
 
 contexts2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 contexts2SQL (Item (Context a) (Context b) (Context c) _t) =

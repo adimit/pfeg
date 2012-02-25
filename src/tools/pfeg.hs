@@ -9,7 +9,7 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import System.Time.Utils (renderSecs)
-import Data.List (foldl',intercalate)
+import Data.List (elemIndex,foldl',intercalate)
 
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
@@ -43,6 +43,8 @@ import Graphics.Vty.Terminal
 
 import PFEG.Configuration
 import ReadArgs
+
+import Codec.Digest.SHA
 
 newtype PFEG a = PFEG { runP :: ReaderT PFEGConfig IO a }
         deriving (Functor, Monad, MonadIO, MonadReader PFEGConfig, MonadCatchIO)
@@ -125,13 +127,9 @@ process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
         m@Record{} -> do
-            insertCtxtS <- prepare (database session) insertCtxtSQL
-            insertTrgtS <- prepare (database session) insertTargetSQL
-            updateS     <- prepare (database session) updateSQL
-            let sql = RecordSQL { updateTarget  = updateS
-                                , insertContext = insertCtxtS
-                                , insertTarget  = insertTrgtS }
-            workOnCorpora (recordF (unigramIDs m) sql) session (corpora m)
+            prepare (database session) (recordsUpsertFunction (length $ targets session)) >>= executeRaw
+            upsertS <- prepare (database session) upsertRecord
+            workOnCorpora (recordF (unigramIDs m) upsertS) session (corpora m)
         m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
@@ -208,15 +206,19 @@ uniI = I.liftI step
 toList :: (a,a,a) -> [a]
 toList (a,b,c) = [a,b,c]
 
-recordF :: UnigramIDs -> SQL -> Item Text -> PFEG ()
-recordF uids sql i = do
-    let item'    = indexItem uids i
-        pattern  = item2SQL item' -- just the slp forms
-        pattern' = toSql (target item'):pattern -- the slp forms with target prepended
-    numRows <- liftIO $ execute (updateTarget sql) pattern'
-    when (numRows == 0) (do
-         void.liftIO $ execute (insertContext sql) pattern
-         void.liftIO $ execute (insertTarget  sql) pattern')
+targetNo :: Text -> PFEG Int
+targetNo t = do
+    session <- ask
+    return $ fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
+                       (t `elemIndex` targets session)
+
+recordF :: UnigramIDs -> Statement -> Item Text -> PFEG ()
+recordF uids statement i@Item{target = t} = do
+    tn <- targetNo t
+    let item = indexItem uids i
+    void.liftIO $ execute statement [ toSql . showBSasHex . hash SHA256 $ item
+                                    , toSql tn
+                                    , toSql . item2SQL $ item]
 
 matchF :: UnigramIDs -> MVar LogData -> IntMap Text -> MatcherInit -> Item Text -> PFEG ()
 matchF uids logVar tids sql i = do
