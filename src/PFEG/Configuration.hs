@@ -172,7 +172,7 @@ cacheHash logChan s = liftIO (void $ execute s []) >> fetchAll
                Nothing       -> return ()
                Just (f:i:[]) -> do
                    let i' = fromSql i
-                   when (i' `mod` 1000 == 0) (liftIO $ writeChan logChan i')
+                   when (i' `mod` 10000 == 0) (liftIO $ writeChan logChan i')
                    m <- get
                    put $! M.insert (fromSql f) i' m
                    fetchAll
