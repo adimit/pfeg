@@ -72,7 +72,7 @@ zeros range = intersperse ',' $ replicate range '0'
 
 recordsUpsertFunction :: Int -> String
 recordsUpsertFunction target_count = unlines
-    [ "CREATE OR REPLACE FUNCTION records_upsert (h bytea, t INT, r INT[]) RETURNS VOID AS"
+    [ "CREATE OR REPLACE FUNCTION records_upsert (h text, t INT, r INT[]) RETURNS VOID AS"
     , "$$"
     , "DECLARE"
     ,   "record_hash sha256 = sha256(h);"
