@@ -2,6 +2,7 @@
 module PFEG.Configuration
     ( ConfigError
     , Corpus
+    , UnigramIDs
     , PFEGConfig(..)
     , ModeConfig(..)
     , configurePFEG
