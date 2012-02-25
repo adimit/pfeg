@@ -7,6 +7,8 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import Control.Concurrent (forkIO,killThread)
+import PFEG.Common
 import Control.Concurrent.Chan
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
@@ -58,7 +60,7 @@ data ModeConfig = Record { corpora   :: [Corpus]
                 | Unigrams { corpora :: [Corpus] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
-                           deriving (Monad, MonadError ConfigError)
+                           deriving (Monad, MonadError ConfigError, MonadIO)
 
 data RunMode = RunRecord | RunMatch | RunUnigrams
 detectMode :: String -> Configurator RunMode
@@ -120,6 +122,7 @@ initialize modeString cfg = do
                         train <- getCorpusSet cfg "main" "trainon"
                         test  <- getCorpusSet cfg "main" "teston"
                         return Unigrams { corpora = train ++ test }
+    liftIO $ putStrLn "Done."
     return PFEGConfig { pfegMode   = runas
                       , database   = db
                       , statusLine = statC
@@ -150,18 +153,27 @@ readChunkSize cfg = do
 
 prepareUnigrams :: Connection -> Configurator UnigramIDs
 prepareUnigrams conn =
-    liftC $ do stmt <- prepare conn "SELECT form,id FROM unigrams"
-               execStateT (cacheHash stmt) M.empty
+    liftC $ do rows <- quickQuery' conn "SELECT count(*) FROM unigrams" []
+               (finalize,logChan) <- case rows of
+                   [[x]] -> do
+                        logChan <- newChan
+                        threadID <- forkIO $ logger (fromSql x) logChan
+                        return (\a -> killThread threadID >> return a,logChan)
+                   xs -> error $ "Failed to obtain count from unigrams " ++ show xs
+               stmt <- prepare conn "SELECT form,id FROM unigrams"
+               execStateT (cacheHash logChan stmt) M.empty >>= finalize
 
-cacheHash :: Statement -> StateT UnigramIDs IO ()
-cacheHash s = liftIO (void $ execute s []) >> fetchAll
+cacheHash :: Chan Int -> Statement -> StateT UnigramIDs IO ()
+cacheHash logChan s = liftIO (void $ execute s []) >> fetchAll
     where fetchAll = do
           row <- liftIO $ fetchRow s
           case row of
                Nothing       -> return ()
                Just (f:i:[]) -> do
+                   let i' = fromSql i
+                   when (i' `mod` 1000 == 0) (liftIO $ writeChan logChan i')
                    m <- get
-                   put $! M.insert (fromSql f) (fromSql i) m
+                   put $! M.insert (fromSql f) i' m
                    fetchAll
                _             -> fail "Malformed result in unigrams."
 
