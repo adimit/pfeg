@@ -87,10 +87,10 @@ configurePFEG match f = do
 
 getPostgresOpts :: Config -> Configurator [(String,String)]
 getPostgresOpts cfg = do
-    -- host   <- getValue cfg "databases" "host"
-    user   <- getValue cfg "databases" "user"
-    dbName <- getValue cfg "databases" "dbName"
-    return [ ("user",user) , ("dbname",dbName)  ]
+    host   <- getValue cfg "database" "host"
+    user   <- getValue cfg "database" "user"
+    dbName <- getValue cfg "database" "dbName"
+    return [ ("host" , host) , ("user",user) , ("dbname",dbName)  ]
 
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
@@ -102,7 +102,7 @@ initialize modeString cfg = do
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
-                        uids  <- prepareUnigrams cfg
+                        uids  <- prepareUnigrams db
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         majB  <- getValue cfg "main" "majorityBaseline"
@@ -113,7 +113,7 @@ initialize modeString cfg = do
                                      , resultLog = resL
                                      , unigramIDs = uids }
                   RunRecord -> do
-                        uids  <- prepareUnigrams cfg
+                        uids  <- prepareUnigrams db
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train, unigramIDs = uids }
                   RunUnigrams -> do
@@ -148,14 +148,10 @@ readChunkSize cfg = do
          [(i,"")] -> return i
          _        -> throwError $ GenericError ("Unable to parse " ++ val ++ " as integer.")
 
-prepareUnigrams :: Config -> Configurator UnigramIDs
-prepareUnigrams cfg = do
-    val  <- getValue cfg "databases" "unigrams"
-    conn <- liftC $ connectPostgreSQL val
-    stmt <- liftC $ prepare conn "SELECT f,id FROM unigrams"
-    uids <- liftC $ execStateT (cacheHash stmt) M.empty
-    liftC $ disconnect conn
-    return uids
+prepareUnigrams :: Connection -> Configurator UnigramIDs
+prepareUnigrams conn =
+    liftC $ do stmt <- prepare conn "SELECT form,id FROM unigrams"
+               execStateT (cacheHash stmt) M.empty
 
 cacheHash :: Statement -> StateT UnigramIDs IO ()
 cacheHash s = liftIO (void $ execute s []) >> fetchAll
