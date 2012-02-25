@@ -17,8 +17,6 @@ module PFEG.Common
       -- * Shared iteratees
     , countChunksI
     , corpusI
-      -- * Configuration
-    , UnigramIDs
       -- * types
     , MatchMode(..)
     , MatchPattern(..)
@@ -33,7 +31,6 @@ import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
 import Data.Maybe (catMaybes)
-import Data.HashMap.Strict (HashMap)
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
@@ -151,5 +148,3 @@ logger total logVar = do
                   ++ " (" ++ show (round (100*ρ) :: Integer)
                   ++ "%) ETA: " ++ renderS eta ++ "   "
         hFlush stdout
-
-type UnigramIDs = HashMap Text Int
