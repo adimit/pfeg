@@ -162,19 +162,18 @@ prepareUnigrams conn =
                         return (\a -> killThread threadID >> return a,logChan)
                    xs -> error $ "Failed to obtain count from unigrams " ++ show xs
                stmt <- prepare conn "SELECT form,id FROM unigrams"
-               execStateT (cacheHash logChan stmt) M.empty >>= finalize
+               execStateT (cacheHash logChan stmt) (M.empty,0) >>= finalize.fst
 
-cacheHash :: Chan Int -> Statement -> StateT UnigramIDs IO ()
+cacheHash :: Chan Int -> Statement -> StateT (UnigramIDs,Int) IO ()
 cacheHash logChan s = liftIO (void $ execute s []) >> fetchAll
     where fetchAll = do
           row <- liftIO $ fetchRow s
           case row of
                Nothing       -> return ()
                Just (f:i:[]) -> do
-                   let i' = fromSql i
-                   when (i' `mod` 10000 == 0) (liftIO $ writeChan logChan i')
-                   m <- get
-                   put $! M.insert (fromSql f) i' m
+                   (m,c) <- get
+                   when (c `mod` 10000 == 0) (liftIO $ writeChan logChan c)
+                   put (M.insert (fromSql f) (fromSql i) m,c+1)
                    fetchAll
                _             -> fail "Malformed result in unigrams."
 
