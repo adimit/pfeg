@@ -133,10 +133,11 @@ process session =
 runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
     session <- ask
+    void . liftIO $ execute upsert [toSql nullToken, toSql (1::Int)]
     hist <- foldM acquireHistogram M.empty (corpora.pfegMode $ session)
-    liftIO $ do putStr "Waiting for db…"
+    liftIO $ do putStr "Waiting for DB…" >> hFlush stdout
                 t <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
-                putStrLn $ "\rDB took " ++ renderS t
+                putStrLn $ "\rDB took " ++ renderS t ++ "         "
                 commitTo $ database session
 
 histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()

@@ -5,6 +5,8 @@ module PFEG.Context
     , Item(..)
       -- * Transformation functions
     , getItems
+      -- * Misc
+    , nullToken
     ) where
 
 import PFEG.Common
@@ -22,7 +24,6 @@ import Data.Foldable (Foldable)
 
 import Safe (atMay)
 
-import Prelude hiding (null)
 import Codec.Digest.SHA.Monad
 
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
@@ -45,20 +46,21 @@ getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
                in  map (((ensureNotEmpty . filterPoop) `fmap`).getItem s) target_indices
 
 
-null :: Text
-null = T.pack "NIL"
+nullToken :: Text
+nullToken = T.pack "NIX"
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
 getItem s i = let wordContext = Context [a,b,c,d,e,f]
-                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (null,null,null).atMay s) [i-3..i+3]
+                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (nullToken,nullToken,nullToken).atMay s)
+                                           [i-3..i+3]
               in  Item { lItem = fmap trd3  wordContext
                        , pItem = fmap snd3  wordContext
                        , sItem = fmap fst3  wordContext
                        , target = fst3 t }
 
 ensureNotEmpty :: Text -> Text
-ensureNotEmpty t | t == T.empty = null
+ensureNotEmpty t | t == T.empty = nullToken
                  | otherwise   = t
 
 filterPoop :: Text -> Text
