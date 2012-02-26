@@ -57,7 +57,6 @@ BEGIN
 	FOR temp IN EXECUTE 'SELECT counts FROM records WHERE' || query LOOP
 		count := count+1;
 		-- For each of the results of the query, add up the counts arrays positionally.
-		RAISE NOTICE 'temp array has values: %' , temp;
 		FOR i IN SELECT generate_subscripts(temp,1) LOOP
 			result[i] := COALESCE(result[i],0) + COALESCE(temp[i],0);
 		END LOOP;
