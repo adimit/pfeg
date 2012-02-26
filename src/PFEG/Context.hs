@@ -42,7 +42,7 @@ instance Hashable (Item Text) where
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
-               in  map (getItem s) target_indices
+               in  map (((ensureNotEmpty . filterPoop) `fmap`).getItem s) target_indices
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
@@ -53,3 +53,10 @@ getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
                        , pItem = fmap snd3  wordContext
                        , sItem = fmap fst3  wordContext
                        , target = fst3 t }
+
+ensureNotEmpty :: Text -> Text
+ensureNotEmpty t | t == T.empty = T.pack "NULL"
+                 | otherwise   = t
+
+filterPoop :: Text -> Text
+filterPoop = T.filter (not.(`elem` "\"}{'-.)([],"))

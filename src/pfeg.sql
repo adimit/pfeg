@@ -81,7 +81,7 @@ BEGIN
 			temp_arr int[]; -- we insert this array to initialize counts
 		BEGIN
 			temp_arr[t] := 1;
-			INSERT INTO records(id,record,counts) VALUES (record_hash,r,temp_arr);
+			INSERT INTO records(id,record,counts) VALUES (record_hash,indexed_r,temp_arr);
 			RETURN;
 		EXCEPTION WHEN unique_violation THEN
 			NULL; -- attempt to update again
