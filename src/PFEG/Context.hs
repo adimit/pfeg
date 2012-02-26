@@ -5,8 +5,6 @@ module PFEG.Context
     , Item(..)
       -- * Transformation functions
     , getItems
-      -- * Misc
-    , nullToken
     ) where
 
 import PFEG.Common
@@ -43,11 +41,8 @@ instance Hashable (Item Text) where
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
-               in  map (((ensureNotEmpty . filterPoop) `fmap`).getItem s) target_indices
+               in  map (getItem s) target_indices
 
-
-nullToken :: Text
-nullToken = T.pack "NIX"
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
@@ -58,10 +53,3 @@ getItem s i = let wordContext = Context [a,b,c,d,e,f]
                        , pItem = fmap snd3  wordContext
                        , sItem = fmap fst3  wordContext
                        , target = fst3 t }
-
-ensureNotEmpty :: Text -> Text
-ensureNotEmpty t | t == T.empty = nullToken
-                 | otherwise   = t
-
-filterPoop :: Text -> Text
-filterPoop = T.filter (not.(`elem` "\"}{'-.)([],"))

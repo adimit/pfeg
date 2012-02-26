@@ -20,6 +20,8 @@ module PFEG.Common
       -- * types
     , MatchMode(..)
     , MatchPattern(..)
+      -- * Misc
+    , nullToken
     ) where
 
 import PFEG.Types
@@ -87,9 +89,22 @@ wordP = do surface <- takeTill (==tab8)
            skip (==nl8)
            if B.head tag == c28 '$'
               then return Nothing
-              else return $ Just ( X.toCaseFold.decodeUtf8 $ surface
+              else return $ Just ( normalize.decodeUtf8 $ surface
                                  ,              decodeUtf8   tag
-                                 , X.toCaseFold.decodeUtf8 $ lemma)
+                                 , normalize.decodeUtf8 $ lemma)
+
+normalize :: Text -> Text
+normalize = ensureNotEmpty . filterPoop . X.toCaseFold
+
+nullToken :: Text
+nullToken = X.pack "NIX"
+
+ensureNotEmpty :: Text -> Text
+ensureNotEmpty t | t == X.empty = nullToken
+                 | otherwise   = t
+
+filterPoop :: Text -> Text
+filterPoop = X.filter (not.(`elem` "\"}{'-.)([],"))
 
 sentenceP :: Parser (Sentence Text)
 sentenceP = return.catMaybes =<< wordP `manyTill` word8 nl8 <* skipWhile (==nl8)
