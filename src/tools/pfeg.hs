@@ -195,8 +195,8 @@ toList (a,b,c) = [a,b,c]
 targetNo :: Text -> PFEG Int
 targetNo t = do
     session <- ask
-    return $ fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
-                       (t `elemIndex` targets session)
+    return $ 1+fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
+                         (t `elemIndex` targets session)
 
 recordF :: Statement -> Item Text -> PFEG ()
 recordF statement item@Item{target = t} = do
