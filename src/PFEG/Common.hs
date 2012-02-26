@@ -129,7 +129,7 @@ logger total logVar = do
     forever $ do
         cur <- readChan logVar
         tcur <- getCurrentTime
-        let ρ   = fromIntegral (cur+1) / fromIntegral total
+        let ρ   = fromIntegral cur / fromIntegral (total+1)
             δt  = tcur `diffUTCTime` t0
             eta = (recip ρ - 1) * δt
         putStr $ "\rRunning for " ++ renderS δt
