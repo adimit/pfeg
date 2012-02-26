@@ -44,18 +44,21 @@ getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
                in  map (((ensureNotEmpty . filterPoop) `fmap`).getItem s) target_indices
 
+
+null :: Text
+null = T.pack "NIL"
+
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
-getItem s i = let nt          = T.pack "NULL" -- Special null-unigram
-                  wordContext = Context [a,b,c,d,e,f]
-                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (nt,nt,nt).atMay s) [i-3..i+3]
+getItem s i = let wordContext = Context [a,b,c,d,e,f]
+                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (null,null,null).atMay s) [i-3..i+3]
               in  Item { lItem = fmap trd3  wordContext
                        , pItem = fmap snd3  wordContext
                        , sItem = fmap fst3  wordContext
                        , target = fst3 t }
 
 ensureNotEmpty :: Text -> Text
-ensureNotEmpty t | t == T.empty = T.pack "NULL"
+ensureNotEmpty t | t == T.empty = null
                  | otherwise   = t
 
 filterPoop :: Text -> Text
