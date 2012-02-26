@@ -104,7 +104,7 @@ ensureNotEmpty t | t == X.empty = nullToken
                  | otherwise   = t
 
 filterPoop :: Text -> Text
-filterPoop = X.filter (not.(`elem` "\"}{'-.)([],"))
+filterPoop = X.filter (not.(`elem` "\"}{)([],"))
 
 sentenceP :: Parser (Sentence Text)
 sentenceP = return.catMaybes =<< wordP `manyTill` word8 nl8 <* skipWhile (==nl8)
