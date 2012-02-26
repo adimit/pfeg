@@ -59,7 +59,7 @@ BEGIN
 		-- For each of the results of the query, add up the counts arrays positionally.
 		RAISE NOTICE 'temp array has values: %' , temp;
 		FOR i IN SELECT generate_subscripts(temp,1) LOOP
-			result[i] := result[i] + temp[i];
+			result[i] := COALESCE(result[i],0) + COALESCE(temp[i],0);
 		END LOOP;
 	END LOOP;
 	rowvar := ROW(result,count);
