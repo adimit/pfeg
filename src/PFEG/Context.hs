@@ -12,6 +12,7 @@ import PFEG.Types
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding
 
 import Data.List (findIndices)
 import Data.Maybe (fromMaybe)
@@ -24,11 +25,6 @@ import Safe (atMay)
 import Prelude hiding (null)
 import Codec.Digest.SHA.Monad
 
-import Data.Binary.BitBuilder
-
-import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString as Strict
-
 newtype Context a = Context [a] deriving (Eq,Functor,Foldable,Traversable,Show)
 
 data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
@@ -39,10 +35,9 @@ data Item i = Item { pItem :: Context i -- ^ Part of speech part of the item
 
 -- | Hash an item without targets. I.e. items with different targets which are
 -- otherwise the same will hash to the same value!
-instance Hashable (Item Int) where
+instance Hashable (Item Text) where
     update (Item { pItem = (Context pI), lItem = (Context lI), sItem = (Context sI) }) =
-           update . Strict.concat . Lazy.toChunks . Lazy.concat $
-                    map (toLazyByteString . fromBits 32) (pI++lI++sI)
+           update $ encodeUtf8 (T.intercalate (T.singleton '.') (pI++lI++sI))
 
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]

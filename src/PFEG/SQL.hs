@@ -25,6 +25,9 @@ import Database.HDBC
 import PFEG.Common
 import PFEG.Context
 
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import Data.List (intercalate,intersperse)
 import Data.Maybe (catMaybes)
 
@@ -90,9 +93,9 @@ questionmarks :: Int -> String
 questionmarks range = intersperse ',' $ replicate range '?'
 
 -- Convert an item's payload to Postgres Array String representation *without* the target.
-item2SQL :: Item Int -> String
+item2SQL :: Item Text -> String
 item2SQL Item { pItem = (Context ps), lItem = (Context ls), sItem = (Context ss) } =
-    '{' : intercalate "," (map show (ss++ls++ps)) ++ "}"
+    '{' : intercalate "," (map T.unpack (ss++ls++ps)) ++ "}"
 
 contexts2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 contexts2SQL (Item (Context a) (Context b) (Context c) _t) =

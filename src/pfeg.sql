@@ -9,9 +9,10 @@ CREATE TABLE IF NOT EXISTS records
     , counts INTEGER[] NOT NULL );
 
 -- Clean up first.
-DROP FUNCTION IF EXISTS records_upsert(TEXT,INTEGER,INTEGER[]);
+DROP FUNCTION IF EXISTS records_upsert(TEXT,INTEGER,TEXT[]);
 DROP FUNCTION IF EXISTS unigram_upsert(TEXT,INTEGER);
-DROP FUNCTION IF EXISTS match_function(INTEGER[],INTEGER[]);
+DROP FUNCTION IF EXISTS match_function(INTEGER[],TEXT[]);
+DROP FUNCTION IF EXISTS index_item(TEXT[]);
 DROP TYPE IF EXISTS match_result;
 
 CREATE FUNCTION unigram_upsert (f TEXT, c INTEGER) RETURNS VOID AS $$
@@ -36,10 +37,11 @@ CREATE TYPE match_result AS (
 	matches	integer
 );
 
-CREATE FUNCTION match_function(pos integer[], val integer[]) RETURNS match_result AS $$
+CREATE FUNCTION match_function(pos integer[], v TEXT[]) RETURNS match_result AS $$
 DECLARE
 	temp   INTEGER[];
 	result INTEGER[];
+	val    INTEGER[] := index_item(v);
 	i      INTEGER := 0;
 	count  INTEGER := 0;
 	query  TEXT    := ' ';
@@ -65,9 +67,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION records_upsert(h text, t INTEGER, r INTEGER[]) RETURNS VOID AS $$
+CREATE FUNCTION records_upsert(h text, t INTEGER, r TEXT[]) RETURNS VOID AS $$
 DECLARE
-	record_hash sha256 := sha256(h);
+	record_hash sha256    := sha256(h);
+	indexed_r   INTEGER[] := index_item(r);
 BEGIN
 	LOOP
 		UPDATE records SET counts[t] = counts[t]+1 WHERE id=record_hash;
@@ -84,5 +87,19 @@ BEGIN
 			NULL; -- attempt to update again
 		END;
 	END LOOP;
-END
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION index_item(item TEXT[]) RETURNS INTEGER[] AS $$
+DECLARE
+	result INTEGER[];
+	t      INTEGER := 0;
+	temp   INTEGER := 0;
+BEGIN
+	FOR t IN SELECT generate_subscripts(item,1) LOOP
+		SELECT id INTO temp FROM unigrams WHERE form = item[t];
+		result[t] := temp;
+	END LOOP;
+	RETURN result;
+END;
 $$ LANGUAGE plpgsql;

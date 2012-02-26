@@ -20,8 +20,6 @@ module PFEG.Common
       -- * types
     , MatchMode(..)
     , MatchPattern(..)
-      -- * misc
-    , unigramsMemoryUsage
     ) where
 
 import PFEG.Types
@@ -68,15 +66,6 @@ instance Hashable MatchPattern where
              f x (Just P ) = shift x 2 .|. 1
              f x (Just L ) = shift x 2 .|. 2
              f x (Just S ) = shift x 2 .|. 3
-
--- | Calculates minimum expected memory usage in bytes of unigram id table given
--- machine word size, average text length and amount of unigrams.
--- Note that we seem to have to add around 25% or so for the GC
-unigramsMemoryUsage :: Int -- ^ Machine word size in bytes (8 for 32 bit, 16 for 64 bit)
-                      -> Int -- ^ Average text length
-                      -> Int -- ^ amount of unigrams
-                      -> Int -- ^ minimum expected hash map size in bytes.
-unigramsMemoryUsage ws avg n = ws * (5 * n + 4 * (n - 1)) + n * (ws * 6 + 2 * avg) + ws * 2 * n
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do

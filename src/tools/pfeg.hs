@@ -11,9 +11,6 @@ import Prelude hiding (log)
 import System.Time.Utils (renderSecs)
 import Data.List (elemIndex,foldl',intercalate)
 
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IM
-
 import Data.Iteratee.Base
 import qualified Data.Iteratee as I
 import Data.Iteratee.IO
@@ -70,9 +67,6 @@ main = do
                 putStrLn "Running…"
                 process session)
 
-indexItem :: UnigramIDs -> Item Text -> Item Int
-indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
-
 data LogState = LogState { currentItem :: !Int }
 
 logResult :: String -> Handle -> MVar LogData -> StateT LogState IO ()
@@ -124,13 +118,13 @@ process session =
     case pfegMode session of
         m@Record{} -> do
             statement <- prepare (database session) upsertRecord
-            workOnCorpora (recordF (unigramIDs m) statement) session (corpora m)
+            workOnCorpora (recordF statement) session (corpora m)
         m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
             threadID <- forkIO . void $
                 runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
-            workOnCorpora (matchF (unigramIDs m) logVar (targetIDs m) sql) session (corpora m)
+            workOnCorpora (matchF logVar sql) session (corpora m)
             killThread threadID
         Unigrams{} -> do
             statement <- prepare (database session) upsertUnigram
@@ -203,31 +197,30 @@ targetNo t = do
     return $ fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
                        (t `elemIndex` targets session)
 
-recordF :: UnigramIDs -> Statement -> Item Text -> PFEG ()
-recordF uids statement i@Item{target = t} = do
+recordF :: Statement -> Item Text -> PFEG ()
+recordF statement item@Item{target = t} = do
     tn <- targetNo t
-    let item = indexItem uids i
     void.liftIO $ execute statement [ toSql . showBSasHex . hash SHA256 $ item
                                     , toSql tn
                                     , toSql . item2SQL $ item]
 
-matchF :: UnigramIDs -> MVar LogData -> IntMap Text -> MatcherInit -> Item Text -> PFEG ()
-matchF uids logVar tids sql i = do
-    results <- mapM (matchAPattern uids tids sql i) matchmodes
+matchF :: MVar LogData -> MatcherInit -> Item Text -> PFEG ()
+matchF logVar sql i = do
+    results <- mapM (matchAPattern sql i) matchmodes
     liftIO $ putMVar logVar (LogData i (zip matchmodes results))
 
 -- given a pattern, matcherInit and an Item, give a result from the database
 -- helper function for @matchF@.
-matchAPattern :: UnigramIDs -> IntMap Text -> MatcherInit -> Item Text -> MatchPattern -> PFEG Result
-matchAPattern uids tids sql i mm = do
-    let pattern = item2SQLp mm (indexItem uids i)
+matchAPattern :: MatcherInit -> Item Text -> MatchPattern -> PFEG Result
+matchAPattern sql i mm = do
+    let pattern = undefined -- item2SQLp mm (indexItem uids i)
     case mm `M.lookup` sql of
          Nothing -> error "IMPOSSIBRU!"
          (Just s) -> do
              void $ liftIO $ execute s pattern
              rows <- liftIO $ fetchAllRows' s
              return $ foldl f [] rows
-             where f r (t:c:idc:[]) = (tids IM.! fromSql t,fromSql c,fromSql idc):r
+             where f r (t:c:idc:[]) = undefined -- (tids IM.! fromSql t,fromSql c,fromSql idc):r
                    f _ xs           = error $ "Unexpected data format." ++ show xs
 
 -- FIXME: this needs a pretty printer
