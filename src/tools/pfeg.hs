@@ -70,10 +70,6 @@ main = do
                 putStrLn "Running…"
                 process session)
 
-data SQL = RecordSQL { updateTarget  :: Statement
-                     , insertContext :: Statement
-                     , insertTarget  :: Statement }
-
 indexItem :: UnigramIDs -> Item Text -> Item Int
 indexItem udb i = (fromMaybe 1 . (`M.lookup` udb)) `fmap` i
 
@@ -127,9 +123,8 @@ process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
         m@Record{} -> do
-            prepare (database session) (recordsUpsertFunction (length $ targets session)) >>= executeRaw
-            upsertS <- prepare (database session) upsertRecord
-            workOnCorpora (recordF (unigramIDs m) upsertS) session (corpora m)
+            statement <- prepare (database session) upsertRecord
+            workOnCorpora (recordF (unigramIDs m) statement) session (corpora m)
         m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
@@ -138,11 +133,7 @@ process session =
             workOnCorpora (matchF (unigramIDs m) logVar (targetIDs m) sql) session (corpora m)
             killThread threadID
         Unigrams{} -> do
-            queryResult <- quickQuery (database session) "SELECT * FROM unigrams WHERE id=1" []
-            statement <- if queryResult == []
-               then prepare (database session) insertUnigram
-               else prepare (database session) unigramsUpsertFunction
-                    >>= executeRaw >> prepare (database session) upsertUnigram
+            statement <- prepare (database session) upsertUnigram
             runPFEG (runUnigram statement) session
 
 runUnigram :: Statement -> PFEG ()

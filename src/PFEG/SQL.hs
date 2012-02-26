@@ -15,11 +15,8 @@ module PFEG.SQL
     , selectAllCtxtSQL
       -- * Unigram SQL
     , upsertUnigram
-    , unigramsUpsertFunction
     , selectAllUnigrams
-    , insertUnigram
       -- * Records SQL
-    , recordsUpsertFunction
     , upsertRecord
     ) where
 
@@ -35,74 +32,11 @@ import Data.Convertible.Base (Convertible)
 
 import Prelude hiding (null)
 
-{-
-CREATE TABLE unigrams
-    ( id SERIAL PRIMARY KEY
-    , form TEXT UNIQUE NOT NULL
-    , count INTEGER NOT NULL);
-
-CREATE TABLE records
-    ( id sha256 PRIMARY KEY
-    , record INT[] NOT NULL
-    , counts INT[] NOT NULL );
- -}
-
-unigramsUpsertFunction :: String
-unigramsUpsertFunction = unlines
-    [ "CREATE OR REPLACE FUNCTION unigram_upsert (f TEXT, c INT) RETURNS VOID AS"
-    , "$$"
-    , "BEGIN"
-    ,   "LOOP"
-    ,     "UPDATE unigrams SET count = count+c WHERE form=f;"
-    ,     "IF found THEN"
-    ,       "RETURN;"
-    ,     "END IF;"
-    ,     "BEGIN"
-    ,       "INSERT INTO unigrams(form,count) VALUES (f,c);"
-    ,       "RETURN;"
-    ,     "EXCEPTION WHEN unique_violation THEN"
-    ,     "END;"
-    ,   "END LOOP;"
-    , "END;"
-    , "$$"
-    , "LANGUAGE plpgsql;" ]
-
-zeros :: Int -> String
-zeros range = intersperse ',' $ replicate range '0'
-
-recordsUpsertFunction :: Int -> String
-recordsUpsertFunction target_count = unlines
-    [ "CREATE OR REPLACE FUNCTION records_upsert (h text, t INT, r INT[]) RETURNS VOID AS"
-    , "$$"
-    , "DECLARE"
-    ,   "record_hash sha256 = sha256(h);"
-    , "BEGIN"
-    ,   "LOOP"
-    ,     "UPDATE records SET counts[t] = counts[t]+1 WHERE id=record_hash;"
-    ,     "IF found THEN"
-    ,       "RETURN;"
-    ,     "END IF;"
-    ,     "DECLARE"
-    ,        "temp_arr int[] = '{"++ zeros target_count ++"}';"
-    ,     "BEGIN"
-    ,       "temp_arr[t] = 1;"
-    ,       "INSERT INTO records(id,record,counts) VALUES (record_hash,r, temp_arr);"
-    ,       "RETURN;"
-    ,     "EXCEPTION WHEN unique_violation THEN"
-    ,     "END;"
-    ,   "END LOOP;"
-    , "END"
-    , "$$"
-    , "LANGUAGE plpgsql;" ]
-
 upsertRecord :: String
 upsertRecord = "SELECT records_upsert(?,?,?)"
 
 upsertUnigram :: String
 upsertUnigram = "SELECT unigram_upsert(?,?)"
-
-insertUnigram :: String
-insertUnigram = "INSERT INTO unigrams (form,count) VALUES (?,?)"
 
 selectAllUnigrams :: String
 selectAllUnigrams = "SELECT id,form FROM unigrams;"
