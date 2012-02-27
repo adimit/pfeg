@@ -92,10 +92,13 @@ letters c = map ((c:) . show)
 questionmarks :: Int -> String
 questionmarks range = intersperse ',' $ replicate range '?'
 
+toPostgresArray :: (a -> String) -> [a] -> SqlValue
+toPostgresArray show' as = toSql $ '{' : intercalate "," (map show' as) ++ "}"
+
 -- Convert an item's payload to Postgres Array String representation *without* the target.
-item2SQL :: Item Text -> String
+item2SQL :: Item Text -> SqlValue
 item2SQL Item { pItem = (Context ps), lItem = (Context ls), sItem = (Context ss) } =
-    '{' : intercalate "," (map T.unpack (ss++ls++ps)) ++ "}"
+    toPostgresArray T.unpack (ss++ls++ps)
 
 contexts2SQL :: (Convertible i SqlValue) => Item i -> [SqlValue]
 contexts2SQL (Item (Context a) (Context b) (Context c) _t) =
