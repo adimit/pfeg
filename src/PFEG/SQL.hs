@@ -2,9 +2,10 @@
 module PFEG.SQL
     ( item2SQL
     , item2postgresArrays
-      -- * Upserts
+      -- * Statements
     , upsertUnigram
     , upsertRecord
+    , queryDatabase
     ) where
 
 import Database.HDBC
@@ -20,11 +21,17 @@ import Data.Maybe (catMaybes)
 
 import Prelude hiding (null)
 
+-- | Call records_upsert(TEXT,INTEGER,TEXT[])
 upsertRecord :: String
 upsertRecord = "SELECT records_upsert(?,?,?)"
 
+-- | Call unigram_upsert(TEXT,INTEGER)
 upsertUnigram :: String
 upsertUnigram = "SELECT unigram_upsert(?,?)"
+
+-- | Call match_function(INTEGER[],TEXT[])
+queryDatabase :: String
+queryDatabase = "SELECT match_function(?,?)"
 
 item2SQLp :: MatchPattern -> Item i -> [i]
 item2SQLp (MatchPattern mm) Item{ pItem = Context pI, lItem = Context lI, sItem = Context sI}  =
@@ -34,6 +41,7 @@ item2SQLp (MatchPattern mm) Item{ pItem = Context pI, lItem = Context lI, sItem 
           ms (Just S) = Just . trd3
           ms Nothing  = const Nothing
 
+-- | Prepare an item and a certain matchmode for @queryDatabase@
 item2postgresArrays :: (a -> String) -> Item a -> MatchPattern -> (SqlValue,SqlValue)
 item2postgresArrays show' i mm =
     (toPostgresArray show $ matchPositions mm,toPostgresArray show' $ item2SQLp mm i)
