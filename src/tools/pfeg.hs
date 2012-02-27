@@ -125,7 +125,7 @@ process session =
             workOnCorpora (recordF ioref mvar) session (corpora m)
             putStrLn "Waiting for DB…" >> takeMVar cmd
         m@Match{} -> do
-            sql <- precompileSQL mkMatchSQL (database session) matchmodes
+            sql <- undefined -- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
             threadID <- forkIO . void $
                 runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
