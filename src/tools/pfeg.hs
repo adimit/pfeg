@@ -29,8 +29,7 @@ import Control.Concurrent (ThreadId,killThread,forkIO)
 import Control.Exception (bracket)
 
 import Control.Monad.CatchIO (MonadCatchIO)
-import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Class
+import Control.Monad.State.Strict
 import Control.Monad.Reader
 
 import Database.HDBC
@@ -42,6 +41,8 @@ import PFEG.Configuration
 import ReadArgs
 
 import Codec.Digest.SHA
+
+import Data.IORef
 
 newtype PFEG a = PFEG { runP :: ReaderT PFEGConfig IO a }
         deriving (Functor, Monad, MonadIO, MonadReader PFEGConfig, MonadCatchIO)
@@ -86,7 +87,6 @@ logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,re
                      [] -> ["Baseline",majB] -- empty result, predict majority baseline
                      xs -> "Prediction":concatMap showResult xs
 
-
 type ItemProcessor = Item Text -> PFEG ()
 
 workOnCorpora :: ItemProcessor -> PFEGConfig -> [Corpus] -> IO ()
@@ -118,7 +118,12 @@ process session =
     case pfegMode session of
         m@Record{} -> do
             statement <- prepare (database session) upsertRecord
-            workOnCorpora (recordF statement) session (corpora m)
+            mvar <- newEmptyMVar
+            cmd <- newMVar ()
+            void $ forkIO . forever $ recorder mvar cmd statement
+            ioref <- newIORef (0,[])
+            workOnCorpora (recordF ioref mvar) session (corpora m)
+            putStrLn "Waiting for DB…" >> takeMVar cmd
         m@Match{} -> do
             sql <- precompileSQL mkMatchSQL (database session) matchmodes
             logVar <- newEmptyMVar
@@ -198,14 +203,23 @@ targetNo t = do
     return $ 1+fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
                          (t `elemIndex` targets session)
 
-recordF :: Statement -> Item Text -> PFEG ()
-recordF statement item@Item{target = t} = do
-    tn <- targetNo t
-    void.liftIO $ execute statement [ toSql . showBSasHex . hash SHA256 $ item
-                                    , toSql tn
-                                    , toSql . item2SQL $ item]
+recorder :: MVar [[SqlValue]] -> MVar () -> Statement -> IO ()
+recorder mvar cmd statement = takeMVar cmd >> takeMVar mvar >>= executeMany statement >> putMVar cmd ()
 
-matchF :: MVar LogData -> MatcherInit -> Item Text -> PFEG ()
+{- FIXME: this is a dirty IORef hack and should probably be put into StateT instead, but I really
+ - don't have time and initiative to do so now. -}
+recordF :: IORef (Int,[[SqlValue]]) -> MVar [[SqlValue]] -> ItemProcessor
+recordF ioref mvar item@Item{target = t} = do
+    tn <- targetNo t
+    (i,vals) <- liftIO $ readIORef ioref
+    let vals' = [ toSql . showBSasHex . hash SHA256 $ item
+                , toSql tn , toSql . item2SQL $ item]:vals
+    if i == 1000
+       then liftIO $ do putMVar mvar vals'
+                        writeIORef ioref (0,[])
+       else liftIO $ writeIORef ioref (i+1,vals')
+
+matchF :: MVar LogData -> MatcherInit -> ItemProcessor
 matchF logVar sql i = do
     results <- mapM (matchAPattern sql i) matchmodes
     liftIO $ putMVar logVar (LogData i (zip matchmodes results))
