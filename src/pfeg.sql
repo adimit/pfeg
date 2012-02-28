@@ -51,7 +51,7 @@ BEGIN
 	-- First piece together the query out of positional parameters and values
 	-- Note that this assumes that array_dims(pos) = array_dims(val)
 	FOR i IN SELECT generate_subscripts(pos,1) LOOP
-		query := query || andvar || 'record[' || pos[i] || ']=' || val[i];
+		query := query || andvar || 'record[' || pos[i] || ']=' || COALESCE(val[i],0);
 		andvar := ' AND ';
 	END LOOP;
 	FOR temp IN EXECUTE 'SELECT counts FROM records WHERE' || query LOOP
@@ -97,7 +97,7 @@ DECLARE
 BEGIN
 	FOR t IN SELECT generate_subscripts(item,1) LOOP
 		SELECT id INTO temp FROM unigrams WHERE form = item[t];
-		result[t] := temp;
+		result[t] := COALESCE(temp,0);
 	END LOOP;
 	RETURN result;
 END;
