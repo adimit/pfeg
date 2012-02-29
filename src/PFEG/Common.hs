@@ -87,10 +87,10 @@ wordP = do surface <- takeTill (==tab8)
            tag     <- skip (==tab8) *> takeTill (==tab8)
            lemma   <- skip (==tab8) *> takeTill (==nl8)
            skip (==nl8)
-           if B.head tag == c28 '$'
+           if B.head tag `elem` map c28 "$#`,:'()"
               then return Nothing
               else return $ Just ( normalize.decodeUtf8 $ surface
-                                 ,              decodeUtf8   tag
+                                 ,           decodeUtf8   tag
                                  , normalize.decodeUtf8 $ lemma)
 
 normalize :: Text -> Text
