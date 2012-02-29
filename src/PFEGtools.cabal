@@ -8,10 +8,14 @@ Category:      NLP
 Build-type:    Simple
 
 Executable pfeg
-    Build-Depends: HDBC, HDBC-postgresql, base, text, vty, MissingH, mtl, ReadArgs,
+    Build-Depends: HDBC, base, text, mtl, ReadArgs,
                    hsini, iteratee, split, hashable, containers, SHA2, bytestring,
                    time, text, attoparsec, binary, convertible,
                    attoparsec-iteratee, transformers, safe, unordered-containers,
                    MonadCatchIO-transformers
+                   , vty >= 4.7.0.10
+                   , MissingH >= 1.1.1.0
+                   , HDBC-postgresql >= 2.3.2.0
+                   , parsec == 3.1.2
     ghc-options:   -O2 -Wall -threaded -rtsopts
     Main-is:       tools/pfeg.hs
