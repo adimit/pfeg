@@ -1,6 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Main where
 
+import qualified Text.Parsec.Text as PT
+import Text.ParserCombinators.Parsec
 import PFEG.Types
 import PFEG.SQL
 import PFEG.Common
@@ -9,7 +11,9 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import System.Time.Utils (renderSecs)
-import Data.List (elemIndex,foldl',intercalate)
+import Data.List (sortBy,elemIndex,foldl',intercalate)
+
+import Data.Function (on)
 
 import Data.Iteratee.Base
 import qualified Data.Iteratee as I
@@ -21,7 +25,6 @@ import System.IO
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.HashMap.Strict as M
-import Data.HashMap.Strict (HashMap)
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
@@ -38,7 +41,7 @@ import Database.HDBC.PostgreSQL
 import Graphics.Vty.Terminal
 
 import PFEG.Configuration
-import ReadArgs
+import qualified ReadArgs as RA
 
 import Codec.Digest.SHA
 
@@ -49,11 +52,11 @@ newtype PFEG a = PFEG { runP :: ReaderT PFEGConfig IO a }
 
 data LogData = LogData
     { logItem    :: !(Item Text)
-    , logResults :: [(MatchPattern,Result)] }
+    , logResults :: [(MatchPattern,SqlValue)] }
 
 main :: IO ()
 main = do
-    (mode :: String, configFile :: FilePath) <- readArgs
+    (mode :: String, configFile :: FilePath) <- RA.readArgs
     bracket (do putStrLn "Initializing…"
                 terminal_handle >>= hide_cursor
                 configAttempt <- configurePFEG mode configFile
@@ -70,22 +73,54 @@ main = do
 
 data LogState = LogState { currentItem :: !Int }
 
-logResult :: String -> Handle -> MVar LogData -> StateT LogState IO ()
-logResult majB h resV = forever log -- who wants to be forever log
+logResult :: [Text] -> String -> Handle -> MVar LogData -> StateT LogState IO ()
+logResult ts majB h resV = forever log -- who wants to be forever log
     where log = do (LogState n) <- get
                    (LogData item results) <- liftIO $ takeMVar resV
-                   liftIO $ mapM_ (logDataLine majB h n item) results
+                   liftIO $ mapM_ (logDataLine ts majB h n item) results
                    put (LogState $ n+1)
 
-logDataLine :: String -> Handle -> Int -> Item Text -> (MatchPattern, Result) -> IO ()
-logDataLine majB h i (Item (Context pI) (Context lI) (Context sI) t) (pattern,result) =
+resultParser :: PT.Parser Result
+resultParser = between (char '(') (char ')') $ do
+    (offset,array) <- option ((0,0),[]) (between (char '"') (char '"') parseArray <|> parseArray)
+    void $ char ','
+    counts <- parseInt
+    return Result { targetHitCounts = take 10 $ replicate (fst offset - 1) 0 ++  array ++ repeat 0
+                  , contextHits = counts }
+
+parseArray :: PT.Parser ((Int,Int),[Int])
+parseArray = do
+    offset <- option (1,1) parseOffset
+    array  <- between (char '{') (char '}') $ parseInt `sepBy` char ','
+    return (offset,array)
+
+parseInt :: PT.Parser Int
+parseInt = liftM read (many1 digit) <|> (string "NULL" >> return 0)
+
+parseOffset :: PT.Parser (Int,Int)
+parseOffset = do res <- between (char '[') (char ']') $ do
+                         start <- parseInt
+                         end   <- char ':' >> parseInt
+                         return (start,end)
+                 void $ char '='
+                 return res
+
+data Result = Result { targetHitCounts :: ![Int], contextHits :: !Int } deriving Show
+
+renderResult :: [Text] -> Result -> [String]
+renderResult ts Result { targetHitCounts = thc, contextHits = c } =
+    show c : concatMap tupleToString (sortBy (flip compare `on` fst) (zip thc ts))
+    where tupleToString :: (Int,Text) -> [String]
+          tupleToString (i,t) = [T.unpack t , show i]
+
+logDataLine :: [Text] -> String -> Handle -> Int -> Item Text -> (MatchPattern, SqlValue) -> IO ()
+logDataLine ts mb h i Item { pItem = Context pI, lItem = Context lI, sItem = Context sI, target =  t } (mm,result) =
     hPutStrLn h line >> hFlush h
-    where line = intercalate "\t" $ [show i, unwrap sI, unwrap lI, unwrap pI, T.unpack t, show pattern] ++ res
-          unwrap = unwords.map T.unpack
-          showResult (prediction,count,ctxts) = [T.unpack prediction,show count, show ctxts]
-          res = case result of
-                     [] -> ["Baseline",majB] -- empty result, predict majority baseline
-                     xs -> "Prediction":concatMap showResult xs
+    where line = intercalate "\t" $ [show i, f sI, f lI, f pI, T.unpack t, show mm, mb] ++ res
+          f = unwords.map T.unpack
+          res = case parse resultParser "SQL result" (fromSql result) of
+                     (Left err)  -> [show err]
+                     (Right r) -> renderResult ts r
 
 type ItemProcessor = Item Text -> PFEG ()
 
@@ -125,11 +160,11 @@ process session =
             workOnCorpora (recordF ioref mvar) session (corpora m)
             putStrLn "Waiting for DB…" >> takeMVar cmd
         m@Match{} -> do
-            sql <- undefined -- precompileSQL mkMatchSQL (database session) matchmodes
+            statement <- prepare (database session) queryDatabase
             logVar <- newEmptyMVar
             threadID <- forkIO . void $
-                runStateT (logResult (majorityBaseline m) (resultLog m) logVar) (LogState 1)
-            workOnCorpora (matchF logVar sql) session (corpora m)
+                runStateT (logResult (targets session) (majorityBaseline m) (resultLog m) logVar) (LogState 1)
+            workOnCorpora (matchF statement logVar) session (corpora m)
             killThread threadID
         Unigrams{} -> do
             statement <- prepare (database session) upsertUnigram
@@ -197,6 +232,11 @@ uniI = I.liftI step
 toList :: (a,a,a) -> [a]
 toList (a,b,c) = [a,b,c]
 
+noTarget :: Int -> PFEG Text
+noTarget i = do
+    session <- ask
+    return $ targets session!!(i-1)
+
 targetNo :: Text -> PFEG Int
 targetNo t = do
     session <- ask
@@ -219,40 +259,20 @@ recordF ioref mvar item@Item{target = t} = do
                         writeIORef ioref (0,[])
        else liftIO $ writeIORef ioref (i+1,vals')
 
-matchF :: MVar LogData -> MatcherInit -> ItemProcessor
-matchF logVar sql i = do
-    results <- mapM (matchAPattern sql i) matchmodes
+matchF :: Statement -> MVar LogData -> ItemProcessor
+matchF statement logVar i = do
+    results <- mapM (matchAPattern statement i) matchmodes
     liftIO $ putMVar logVar (LogData i (zip matchmodes results))
 
 -- given a pattern, matcherInit and an Item, give a result from the database
 -- helper function for @matchF@.
-matchAPattern :: MatcherInit -> Item Text -> MatchPattern -> PFEG Result
-matchAPattern sql i mm = do
-    let pattern = undefined -- item2SQLp mm (indexItem uids i)
-    case mm `M.lookup` sql of
-         Nothing -> error "IMPOSSIBRU!"
-         (Just s) -> do
-             void $ liftIO $ execute s pattern
-             rows <- liftIO $ fetchAllRows' s
-             return $ foldl f [] rows
-             where f r (t:c:idc:[]) = undefined -- (tids IM.! fromSql t,fromSql c,fromSql idc):r
-                   f _ xs           = error $ "Unexpected data format." ++ show xs
-
--- FIXME: this needs a pretty printer
-instance Show LogData where
-    show (LogData (Item _ _ (Context s) t) lr) = intercalate " | " (map T.unpack s) ++ "\nActual: " ++ T.unpack t
-        ++ "\n" ++ concatMap (\(mm,r) -> show mm ++ ": " ++ show r ++ "\n") lr
-
--- | list of possible predictions with associated counts and matches.
--- (target,count,amount_of_matches)
-type Result = [(Text,Int,Int)]
-
--- | Map from @MatchPattern@s to SQL @Statement@s for the matcher.
-type MatcherInit = HashMap MatchPattern Statement
-
-precompileSQL :: (MatchPattern -> String) -> Connection -> [MatchPattern] -> IO MatcherInit
-precompileSQL sqlMM conn = foldM f M.empty
-    where f m mm = liftM (\s -> M.insert mm s m) (prepare conn (sqlMM mm))
+matchAPattern :: Statement -> Item Text -> MatchPattern -> PFEG SqlValue
+matchAPattern statement i mm = do
+    let (pos,payload) = item2postgresArrays T.unpack i mm
+    rows <- liftIO $ execute statement [pos,payload] >> fetchAllRows' statement
+    case rows of
+         [result:[]] -> return result
+         xs -> error $ "SQL barfed! " ++ show xs
 
 -- preliminary list of matchmodes
 matchmodes :: [MatchPattern]
