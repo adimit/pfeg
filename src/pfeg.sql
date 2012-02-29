@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS records
 -- Clean up first.
 DROP FUNCTION IF EXISTS records_upsert(TEXT,INTEGER,TEXT[]);
 DROP FUNCTION IF EXISTS unigram_upsert(TEXT,INTEGER);
-DROP FUNCTION IF EXISTS match_function(INTEGER[],TEXT[]);
 DROP FUNCTION IF EXISTS index_item(TEXT[]);
+DROP FUNCTION IF EXISTS query_records(TEXT[], TEXT[][]);
 DROP TYPE IF EXISTS match_result;
 
 CREATE FUNCTION unigram_upsert (f TEXT, c INTEGER) RETURNS VOID AS $$
@@ -37,28 +37,37 @@ CREATE TYPE match_result AS (
 	matches	integer
 );
 
-CREATE FUNCTION match_function(pos integer[], v TEXT[]) RETURNS match_result AS $$
+-- pos expects array slices a…b in form 'a:b', stuff is a 2-dim array containing text to search for. Example:
+-- SELECT query_records('{15:16,9:10}','{{VAFIN,NN},{werden,september}}');
+CREATE FUNCTION query_records(pos TEXT[], stuff TEXT[]) RETURNS match_result AS $$
 DECLARE
-	temp   INTEGER[];
-	result INTEGER[];
-	val    INTEGER[] := index_item(v);
-	i      INTEGER := 0;
-	count  INTEGER := 0;
-	query  TEXT    := ' ';
-	andvar TEXT    := '';
+	query1 TEXT := ' ';
+	query2 TEXT := ' ';
+	andvar TEXT := '';
 	rowvar match_result;
+	i      INTEGER := 0;
+	val    INTEGER[];
+	result INTEGER[];
+	count  INTEGER := 0;
+	temp   TEXT[];
 BEGIN
-	-- First piece together the query out of positional parameters and values
-	-- Note that this assumes that array_dims(pos) = array_dims(val)
-	FOR i IN SELECT generate_subscripts(pos,1) LOOP
-		query := query || andvar || 'record[' || pos[i] || ']=' || COALESCE(val[i],0);
-		andvar := ' AND ';
+	-- First piece together the queries out of positional parameters and values
+	-- Note that this assumes that array_dims(pos) = array_dims(stuff)
+	FOREACH temp SLICE 1 IN ARRAY stuff LOOP
+		i = i+1;
+		val := index_item(temp);
+		query1 := query1 || andvar || 'record @> ''' || (val::Text) || '''';
+		query2 := query2 || andvar || 'record[' || pos[i] || '] = ''' || (val::Text) || '''';
+		andvar = ' AND ';
 	END LOOP;
-	FOR temp IN EXECUTE 'SELECT counts FROM records WHERE' || query LOOP
+	raise notice 'query1 = %', query1;
+	raise notice 'query2 = %', query2;
+	RAISE NOTICE 'SELECT counts FROM (SELECT counts FROM records WHERE % ) AS f WHERE %', query1, query2 ;
+	FOR val IN EXECUTE 'SELECT counts FROM (SELECT * FROM records WHERE' || query1 || ') AS f WHERE' || query2 LOOP
 		count := count+1;
 		-- For each of the results of the query, add up the counts arrays positionally.
-		FOR i IN SELECT generate_subscripts(temp,1) LOOP
-			result[i] := COALESCE(result[i],0) + COALESCE(temp[i],0);
+		FOR i IN SELECT generate_subscripts(val,1) LOOP
+			result[i] := COALESCE(result[i],0) + COALESCE(val[i],0);
 		END LOOP;
 	END LOOP;
 	rowvar := ROW(result,count);
