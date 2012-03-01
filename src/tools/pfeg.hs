@@ -180,11 +180,7 @@ runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
     session <- ask
     void . liftIO $ execute upsert [toSql nullToken, toSql (1::Int)]
-    hist <- foldM acquireHistogram M.empty (corpora.pfegMode $ session)
-    liftIO $ do putStr "Waiting for DB…" >> hFlush stdout
-                t <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
-                putStrLn $ "\rDB took " ++ renderS t ++ "         "
-                commitTo $ database session
+    mapM_ (acquireHistogram upsert) (corpora.pfegMode $ session)
 
 histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()
 histogramCommitter upsert histVar = loop
@@ -196,18 +192,21 @@ histogramCommitter upsert histVar = loop
                     (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist)) >> loop
 
 {- TODO: this has to be merged somehow with handleCorpus, which does something pretty similar. -}
-acquireHistogram :: Histogram -> Corpus -> PFEG Histogram
-acquireHistogram hist c@(cName,cFile) = do
+acquireHistogram :: Statement -> Corpus -> PFEG ()
+acquireHistogram upsert c@(cName,cFile) = do
     session <- ask
     (threadID,logVar) <- forkLogger c
     liftIO $ do
         let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                        [ countChunksI logVar, I.joinI $ I.convStream corpusI uniI ])
 
-        histogram <- execStateT iteratee hist
+        histogram <- execStateT iteratee M.empty
         killThread threadID
         putStrLn $ "\nDone processing " ++ cName
-        return histogram
+        putStr "Waiting for DB…" >> hFlush stdout
+        t <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList histogram))
+        putStrLn $ "\rDB took " ++ renderS t ++ "         "
+        commitTo $ database session
 
 forkLogger :: Corpus -> PFEG (ThreadId,Chan Int)
 forkLogger (cName,cFile) = do
