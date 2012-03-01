@@ -10,7 +10,7 @@ module PFEG.SQL
 
 import Database.HDBC
 
-import PFEG.Common
+import PFEG.Types
 import PFEG.Context
 
 import Data.Text (Text)
