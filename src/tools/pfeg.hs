@@ -169,6 +169,12 @@ process session =
         Unigrams{} -> do
             statement <- prepare (database session) upsertUnigram
             runPFEG (runUnigram statement) session
+        m@Predict{} -> do
+            statement <- prepare (database session) queryDatabase
+            workOnCorpora (predictF statement) session (corpora m)
+
+predictF :: Statement -> ItemProcessor
+predictF = undefined
 
 runUnigram :: Statement -> PFEG ()
 runUnigram upsert = do
