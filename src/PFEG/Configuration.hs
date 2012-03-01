@@ -7,6 +7,8 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import Data.Either (partitionEithers)
+import PFEG.Types
 import Control.Concurrent.Chan
 import Data.Ini.Types
 import Data.Ini.Reader
@@ -46,15 +48,18 @@ data ModeConfig = Record { corpora   :: [Corpus] }
                          , majorityBaseline :: String
                          , resultLog :: Handle }
                 | Unigrams { corpora :: [Corpus] }
+                | Predict { corpora  :: [Corpus]
+                          , matchPatterns :: [MatchPattern] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
 
-data RunMode = RunRecord | RunMatch | RunUnigrams
+data RunMode = RunRecord | RunMatch | RunUnigrams | RunPredict
 detectMode :: String -> Configurator RunMode
 detectMode "match" = return RunMatch
 detectMode "unigrams" = return RunUnigrams
 detectMode "record" = return RunRecord
+detectMode "predict" = return RunPredict
 detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
 
 liftC :: IO a -> Configurator a
@@ -105,12 +110,23 @@ initialize modeString cfg = do
                         train <- getCorpusSet cfg "main" "trainon"
                         test  <- getCorpusSet cfg "main" "teston"
                         return Unigrams { corpora = train ++ test }
+                  RunPredict -> do
+                        predict <- getCorpusSet cfg "main" "predicton"
+                        patterns <- getValue cfg "main" "patterns" >>= parsePatterns
+                        return Predict { corpora = predict, matchPatterns = patterns }
     liftIO $ putStrLn "Done."
     return PFEGConfig { pfegMode   = runas
                       , database   = db
                       , statusLine = statC
                       , targets    = targs
                       , chunkSize  = csize }
+
+parsePatterns :: String -> Configurator [MatchPattern]
+parsePatterns s =
+    let (errors,values) = partitionEithers . map parsePattern . splitOn "," $ s
+    in case errors of
+            [] -> return values
+            xs -> throwError $ GenericError ("Unable to parse match patterns: " ++ show xs)
 
 splitAndStrip :: String -> [Text]
 splitAndStrip = map (T.strip . T.pack) . splitOn ","
