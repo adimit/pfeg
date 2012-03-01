@@ -26,7 +26,10 @@ patternParser :: Parser MatchPattern
 patternParser =
     let parseLetter c m = char c >> return (Just m)
         parseNothing    = char '_' >> return Nothing
-    in liftM MatchPattern $ many1 (parseLetter 'L' L <|> parseLetter 'P' P <|> parseLetter 'S' S <|> parseNothing)
+    in liftM MatchPattern $ spaces >> many1 (parseLetter 'L' L
+                                        <|> parseLetter 'P' P
+                                        <|> parseLetter 'S' S
+                                        <|> parseNothing)
 
 data MatchMode = P | L | S deriving (Show,Eq)
 newtype MatchPattern = MatchPattern { unMatchPattern :: [Maybe MatchMode] } deriving (Eq)
