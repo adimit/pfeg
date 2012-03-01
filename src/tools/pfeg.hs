@@ -259,7 +259,7 @@ recordF ioref mvar item@Item{target = t} = do
     (i,vals) <- liftIO $ readIORef ioref
     let vals' = [ toSql . showBSasHex . hash SHA256 $ item
                 , toSql tn , item2SQL item]:vals
-    if i == 1000
+    if i == 5000
        then liftIO $ do putMVar mvar vals'
                         writeIORef ioref (0,[])
        else liftIO $ writeIORef ioref (i+1,vals')
