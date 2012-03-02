@@ -68,7 +68,7 @@ matchPatternToPositional (MatchPattern mm) =
           nothing = const Nothing
 
 positionalToRanges :: Positional Int -> [Range]
-positionalToRanges pos = map (\x -> head x :-: last x) . groupByJust $ zipWith ($) pos [1..]
+positionalToRanges p = map (\x -> head x :-: last x) . groupByJust $ zipWith ($) p [1..]
 
 type Positional a = [a -> Maybe a]
 

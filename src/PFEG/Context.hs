@@ -7,8 +7,8 @@ module PFEG.Context
     , getItems
     ) where
 
-import PFEG.Common
 import PFEG.Types
+import PFEG.Common
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -40,16 +40,15 @@ instance Hashable (Item Text) where
 
 -- | Get all items in a text
 getItems :: [Text] -> Sentence Text -> [Item Text]
-getItems t s = let target_indices = findIndices (\(w,_,_) -> w `elem` t) s
+getItems t s = let target_indices = findIndices ((`elem` t).surface) s
                in  map (getItem s) target_indices
-
 
 -- | Get the item in sentence @s@ at position @i@.
 getItem :: Sentence Text -> Int -> Item Text
 getItem s i = let wordContext = Context [a,b,c,d,e,f]
-                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (nullToken,nullToken,nullToken).atMay s)
+                  (a:b:c:t:d:e:f:[]) = map (fromMaybe (Word nullToken nullToken nullToken) . atMay s)
                                            [i-3..i+3]
-              in  Item { lItem = fmap trd3  wordContext
-                       , pItem = fmap snd3  wordContext
-                       , sItem = fmap fst3  wordContext
-                       , target = fst3 t }
+              in  Item { lItem = fmap lemma  wordContext
+                       , pItem = fmap pos  wordContext
+                       , sItem = fmap surface  wordContext
+                       , target = surface t }

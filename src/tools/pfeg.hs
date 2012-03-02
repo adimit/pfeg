@@ -231,8 +231,12 @@ uniI = I.liftI step
                                  I.liftI step
           step stream       = I.idone () stream
           treatSentence :: Sentence Text -> Histogram -> Histogram
-          treatSentence sent hist = foldl' (flip f) hist (concatMap toList sent)
+          treatSentence sent hist = foldl' (flip f) hist (concatMap token2list sent)
           f t = M.insertWith (+) t 1
+
+token2list :: Token a -> [a]
+token2list Null = []
+token2list t = [surface t, pos t, lemma t]
 
 toList :: (a,a,a) -> [a]
 toList (a,b,c) = [a,b,c]
@@ -273,8 +277,8 @@ matchF statement logVar i = do
 -- helper function for @matchF@.
 matchAPattern :: Statement -> Item Text -> MatchPattern -> PFEG SqlValue
 matchAPattern statement i mm = do
-    let (pos,payload) = item2postgresArrays T.unpack i mm
-    rows <- liftIO $ execute statement [pos,payload] >> fetchAllRows' statement
+    let (p,payload) = item2postgresArrays T.unpack i mm
+    rows <- liftIO $ execute statement [p,payload] >> fetchAllRows' statement
     case rows of
          [result:[]] -> return result
          xs -> error $ "SQL barfed! " ++ show xs

@@ -2,6 +2,7 @@ module PFEG.Types
     ( Wordcounts
     , Word
     , Sentence
+    , Token(..)
     , MatchMode(..)
     , MatchPattern(..)
     , parsePattern
@@ -17,7 +18,10 @@ import Control.Monad (liftM)
 
 type Wordcounts = T.HashMap X.Text Int
 type Word a = (a,a,a)
-type Sentence a = [Word a]
+type Sentence a = [Token a]
+
+data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
+             | Masked { pos :: !a, lemma :: !a, surface :: !a, original :: !a }
 
 parsePattern :: String -> Either ParseError MatchPattern
 parsePattern = parse patternParser "match pattern"
