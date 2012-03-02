@@ -147,6 +147,9 @@ commitTo conn = do
      putStr "\nCommitting…" >> hFlush stdout
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
+     putStr "\nCleaning up…" >> hFlush stdout
+     time' <- doTimed_ $ prepare conn cleanup >>= executeRaw
+     putStrLn $ "\rCleaned up in "++ (renderSecs.round $ time')
 
 process :: PFEGConfig -> IO ()
 process session =

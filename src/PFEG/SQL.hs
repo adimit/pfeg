@@ -6,6 +6,7 @@ module PFEG.SQL
     , upsertUnigram
     , upsertRecord
     , queryDatabase
+    , cleanup
     ) where
 
 import Database.HDBC
@@ -43,6 +44,9 @@ upsertUnigram = "SELECT unigram_upsert(?,?)"
 -- | Call match_function(INTEGER[],TEXT[])
 queryDatabase :: String
 queryDatabase = "SELECT query_records(?,?)"
+
+cleanup :: String
+cleanup = "VACUUM ANALYZE"
 
 item2SQLp :: MatchPattern -> Item i -> [[i]]
 item2SQLp mm Item{ pItem = Context pI, lItem = Context lI, sItem = Context sI}  =
