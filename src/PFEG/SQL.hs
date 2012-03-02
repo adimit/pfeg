@@ -58,7 +58,7 @@ queryDatabase :: String
 queryDatabase = "SELECT query_records(?,?)"
 
 cleanup :: String
-cleanup = "VACUUM ANALYZE"
+cleanup = "ANALYZE unigrams; ANALYZE records"
 
 item2SQLp :: MatchPattern -> Item i -> [[i]]
 item2SQLp mm Item{ pItem = Context pI, lItem = Context lI, sItem = Context sI}  =
