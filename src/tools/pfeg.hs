@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Main where
 
+import Data.Time.Clock (getCurrentTime)
 import qualified Text.Parsec.Text as PT
 import Text.ParserCombinators.Parsec
 import PFEG.Types
@@ -139,11 +140,14 @@ handleCorpus proc session c@(_cName,cFile) = do
      runPFEG iteratee session
      killThread threadID
      case pfegMode session of
-          Record{} -> commitTo $ database session
+          Record{} -> commitTo (database session) "record" c
           _        -> return ()
 
-commitTo :: Connection -> IO ()
-commitTo conn = do
+commitTo :: Connection -> String -> Corpus -> IO ()
+commitTo conn action (cName,cFile) = do
+     timestamp <- getCurrentTime
+     prepare conn insertAction >>= void.flip execute
+       [toSql action, toSql cName, toSql cFile,toSql timestamp]
      putStr "\nCommitting…" >> hFlush stdout
      time <- doTimed_ $ commit conn
      putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
@@ -200,7 +204,7 @@ acquireHistogram upsert c@(cName,cFile) = do
         putStr "Waiting for DB…" >> hFlush stdout
         t <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList histogram))
         putStrLn $ "\rDB took " ++ renderS t ++ "         "
-        commitTo $ database session
+        commitTo (database session) "unigrams" c
 
 forkLogger :: Corpus -> PFEG (ThreadId,Chan Int)
 forkLogger (cName,cFile) = do

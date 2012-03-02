@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS records
     , record INTEGER[] NOT NULL
     , counts INTEGER[] NOT NULL );
 
+CREATE TABLE IF NOT EXISTS log
+    ( action TEXT NOT NULL
+    , completed DATE NOT NULL
+    , version TEXT NOT NULL
+    , corpusfile TEXT NOT NULL
+    , corpusname TEXT NOT NULL );
+
 -- Clean up first.
 DROP FUNCTION IF EXISTS records_upsert(TEXT,INTEGER,TEXT[]);
 DROP FUNCTION IF EXISTS unigram_upsert(TEXT,INTEGER);

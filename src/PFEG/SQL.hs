@@ -7,6 +7,9 @@ module PFEG.SQL
     , upsertRecord
     , queryDatabase
     , cleanup
+      -- * log statements
+    , insertAction
+    , queryAction
     ) where
 
 import Database.HDBC
@@ -21,6 +24,15 @@ import Data.List (mapAccumL,intercalate)
 import Data.Maybe (catMaybes)
 
 import Prelude hiding (null)
+import Paths_PFEGtools (version)
+import Data.Version (showVersion)
+
+insertAction :: String
+insertAction = "INSERT INTO log (action,corpusname,corpusfile,completed,version) VALUES (?,?,?,?,'"
+             ++ showVersion version ++ "')"
+
+queryAction :: String
+queryAction = "SELECT action,corpusname,corpusfile,completed,version FROM log WHERE corpusfile=?"
 
 -- fiendishly ugly, but it gets the job done.
 groupByJust :: [Maybe a] -> [[a]]
