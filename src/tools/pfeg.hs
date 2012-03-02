@@ -182,15 +182,6 @@ runUnigram upsert = do
     void . liftIO $ execute upsert [toSql nullToken, toSql (1::Int)]
     mapM_ (acquireHistogram upsert) (corpora.pfegMode $ session)
 
-histogramCommitter :: Statement -> MVar (Maybe Histogram) -> IO ()
-histogramCommitter upsert histVar = loop
-    where loop = do
-          chanData <- takeMVar histVar
-          case chanData of
-               Nothing -> return ()
-               (Just hist) -> executeMany upsert
-                    (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist)) >> loop
-
 {- TODO: this has to be merged somehow with handleCorpus, which does something pretty similar. -}
 acquireHistogram :: Statement -> Corpus -> PFEG ()
 acquireHistogram upsert c@(cName,cFile) = do
@@ -235,7 +226,6 @@ uniI = I.liftI step
           f t = M.insertWith (+) t 1
 
 token2list :: Token a -> [a]
-token2list Null = []
 token2list t = [surface t, pos t, lemma t]
 
 toList :: (a,a,a) -> [a]
