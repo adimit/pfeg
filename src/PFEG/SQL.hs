@@ -51,7 +51,7 @@ item2SQLp mm Item{ pItem = Context pI, lItem = Context lI, sItem = Context sI}  
 -- | Prepare an item and a certain matchmode for @queryDatabase@
 item2postgresArrays :: (a -> String) -> Item a -> MatchPattern -> (SqlValue,SqlValue)
 item2postgresArrays show' i mm =
-    (toPostgresArray show . positionalToRanges $ matchPatternToPositional mm
+    ( toPostgresArray show . positionalToRanges $ matchPatternToPositional mm
     , toPostgresArray fromSql (map (toPostgresArray show') (item2SQLp mm i)))
 
 data Range = !Int :-: !Int
