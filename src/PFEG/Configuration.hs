@@ -40,12 +40,12 @@ data PFEGConfig = PFEGConfig
     , statusLine :: Chan Int -- ^ Status update channel
     , database   :: Connection -- ^ The connection to the main database
     , targets    :: [Text] -- ^ Targets for this run
+    , majorityBaseline :: String
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
 
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
-                         , majorityBaseline :: String
                          , resultLog :: Handle }
                 | Unigrams { corpora :: [Corpus] }
                 | Predict { corpora  :: [Corpus]
@@ -94,14 +94,13 @@ initialize modeString cfg = do
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
+    majB  <- getValue cfg "main" "majorityBaseline"
     mode <- detectMode modeString
     runas <- case mode of
                   RunMatch -> do
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
-                        majB  <- getValue cfg "main" "majorityBaseline"
                         return Match { corpora   = test
-                                     , majorityBaseline = majB
                                      , resultLog = resL }
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
@@ -119,6 +118,7 @@ initialize modeString cfg = do
                       , database   = db
                       , statusLine = statC
                       , targets    = targs
+                      , majorityBaseline = majB
                       , chunkSize  = csize }
 
 parsePatterns :: String -> Configurator [MatchPattern]
