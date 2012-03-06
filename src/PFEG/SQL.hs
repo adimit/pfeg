@@ -1,7 +1,7 @@
 module PFEG.SQL
     ( insertAction
     , insertRecord
-    , item2SQL'
+    , item2SQL
     ) where
 
 import Database.HDBC
@@ -26,8 +26,8 @@ insertRecord :: String
 insertRecord = "INSERT INTO records (hash,lcs,rcs,lcl,rcl,?) \
                \VALUES (UNHEX(?),?,?,?,?,1) ON DUPLICATE KEY UPDATE ? = COALESCE(?,0) + 1"
 
-item2SQL :: Int -> Item Text -> [SqlValue]
-item2SQL tnum item@Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs) } =
+item2SQL' :: Int -> Item Text -> [SqlValue]
+item2SQL' tnum item@Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs) } =
     [ targetSql
     , toSql . showBSasHex $ hash SHA256 item
     , tsql ll, tsql rl, tsql ls, tsql rs
@@ -35,7 +35,8 @@ item2SQL tnum item@Item { itemLemma = (Context ll rl) , itemSurface = (Context l
     where tsql = toSql . T.unwords
           targetSql = toSql $ 't':show tnum
 
-item2SQL' :: Item Text -> PFEG a [SqlValue]
-item2SQL' item@Item { target = t } = do
+item2SQL :: Item Text -> PFEG a [SqlValue]
+item2SQL item@Item { target = t } = do
     tnum <- targetNo t
-    return $ item2SQL tnum item
+    return $ item2SQL' tnum item
+{-# INLINE item2SQL #-}
