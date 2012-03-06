@@ -88,7 +88,7 @@ getMySQLInfo cfg = do
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
     connInfo <- getMySQLInfo cfg
-    db  <- liftC . connectMySQL $ connInfo
+    db  <- liftC . withRTSSignalsBlocked . connectMySQL $ connInfo
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
