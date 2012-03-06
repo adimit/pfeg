@@ -14,7 +14,7 @@ import Data.Ini.Types
 import Data.Ini.Reader
 import Data.Ini
 import Database.HDBC
-import Database.HDBC.PostgreSQL
+import Database.HDBC.MySQL
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
@@ -80,17 +80,17 @@ configurePFEG match f = do
          (Left err)  -> return . Left . ParseError $ show err
          (Right cfg) -> runErrorT $ runC $ initialize match cfg
 
-getPostgresOpts :: Config -> Configurator [(String,String)]
-getPostgresOpts cfg = do
+getMySQLInfo :: Config -> Configurator MySQLConnectInfo
+getMySQLInfo cfg = do
     host   <- getValue cfg "database" "host"
     user   <- getValue cfg "database" "user"
     dbName <- getValue cfg "database" "dbName"
-    return [ ("host" , host) , ("user",user) , ("dbname",dbName)  ]
+    return defaultMySQLConnectInfo { mysqlHost = host, mysqlUser = user, mysqlDatabase = dbName }
 
 initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
-    opts <- getPostgresOpts cfg
-    db  <- liftC . connectPostgreSQL $ unwords [ k ++ "=" ++ v | (k,v) <- opts ]
+    connInfo <- getMySQLInfo cfg
+    db  <- liftC . connectMySQL $ connInfo
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
