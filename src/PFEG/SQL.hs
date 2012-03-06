@@ -1,7 +1,6 @@
 module PFEG.SQL
     ( insertAction
     , insertRecord
-    , item2SQL
     , item2SQL'
     ) where
 
