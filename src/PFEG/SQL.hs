@@ -8,8 +8,6 @@ import Database.HDBC
 
 import PFEG.Context
 
-import PFEG
-
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -22,21 +20,15 @@ insertAction :: String
 insertAction = "INSERT INTO log (action,corpusname,corpusfile,completed,version) VALUES (?,?,?,?,'"
              ++ showVersion version ++ "')"
 
-upsertRecord :: String
-upsertRecord = "INSERT INTO records (hash,lcs,rcs,lcl,rcl,?) \
-               \VALUES (UNHEX(?),?,?,?,?,1) ON DUPLICATE KEY UPDATE ? = COALESCE(?,0) + 1"
+upsertRecord :: Int -> String
+upsertRecord tnum = "INSERT INTO records (hash,lcs,rcs,lcl,rcl,"++targetSql++") \
+               \VALUES (UNHEX(?),?,?,?,?,1) ON DUPLICATE KEY UPDATE "
+               ++targetSql++" = COALESCE("++targetSql++",0) + 1"
+          where targetSql = 't':show tnum
 
-item2SQL' :: Int -> Item Text -> [SqlValue]
-item2SQL' tnum item@Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs) } =
-    [ targetSql
-    , toSql . showBSasHex $ hash SHA256 item
-    , tsql ll, tsql rl, tsql ls, tsql rs
-    , targetSql, targetSql ]
+
+item2SQL :: Item Text -> [SqlValue]
+item2SQL item@Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs) } =
+    [ toSql . showBSasHex $ hash SHA256 item
+    , tsql ll, tsql rl, tsql ls, tsql rs ]
     where tsql = toSql . T.unwords
-          targetSql = toSql $ 't':show tnum
-
-item2SQL :: Item Text -> PFEG a [SqlValue]
-item2SQL item@Item { target = t } = do
-    tnum <- targetNo t
-    return $ item2SQL' tnum item
-{-# INLINE item2SQL #-}
