@@ -1,6 +1,6 @@
 module PFEG.SQL
     ( insertAction
-    , insertRecord
+    , upsertRecord
     , item2SQL
     ) where
 
@@ -22,8 +22,8 @@ insertAction :: String
 insertAction = "INSERT INTO log (action,corpusname,corpusfile,completed,version) VALUES (?,?,?,?,'"
              ++ showVersion version ++ "')"
 
-insertRecord :: String
-insertRecord = "INSERT INTO records (hash,lcs,rcs,lcl,rcl,?) \
+upsertRecord :: String
+upsertRecord = "INSERT INTO records (hash,lcs,rcs,lcl,rcl,?) \
                \VALUES (UNHEX(?),?,?,?,?,1) ON DUPLICATE KEY UPDATE ? = COALESCE(?,0) + 1"
 
 item2SQL' :: Int -> Item Text -> [SqlValue]
