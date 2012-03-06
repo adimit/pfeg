@@ -37,7 +37,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Reader
 
 import Database.HDBC
-import Database.HDBC.PostgreSQL
+import Database.HDBC.MySQL
 
 import Graphics.Vty.Terminal
 
@@ -46,27 +46,79 @@ import qualified ReadArgs as RA
 
 import Codec.Digest.SHA
 
-data LogData = LogData
-    { logItem    :: !(Item Text)
-    , logResults :: [(MatchPattern,SqlValue)] }
-
 main :: IO ()
 main = do
     (mode :: String, configFile :: FilePath) <- RA.readArgs
-    bracket (do putStrLn "Initializing…"
-                terminal_handle >>= hide_cursor
-                configAttempt <- configurePFEG mode configFile
-                case configAttempt of
-                     (Left err) -> error $ "Initialization failed: "++ show err
-                     (Right config) -> return config)
-            (\session -> do
-                putStrLn "Shutting down…"
-                terminal_handle >>= show_cursor
-                deinitialize session)
-            (\session -> do
-                putStrLn "Running…"
-                process session)
+    withRTSSignalsBlocked $
+      bracket (do putStrLn "Initializing…"
+                  terminal_handle >>= hide_cursor
+                  configAttempt <- configurePFEG mode configFile
+                  case configAttempt of
+                       (Left err) -> error $ "Initialization failed: "++ show err
+                       (Right config) -> return config)
+              (\session -> do
+                  putStrLn "Shutting down…"
+                  terminal_handle >>= show_cursor
+                  deinitialize session)
+              (\session -> do
+                  putStrLn "Running…"
+                  process session)
 
+process :: PFEGConfig -> IO ()
+process session =
+    case pfegMode session of
+        Record{ corpora = cs } -> do
+          s <- prepare (database session) upsertRecord
+          mvar <- newEmptyMVar
+          cmd <- newMVar ()
+          void $ forkIO . forever $ recorder s mvar cmd
+          let it = standardIteratee (recordF mvar) session
+          void $ workOnCorpora it session (0,[]) cs
+          putStrLn "Waiting for DB…" >> takeMVar cmd
+
+workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
+workOnCorpora it session st = mapM $ \ c@(_cName,cFile) -> do
+    (threadID,logVar) <- evalPFEG (forkLogger c) () session
+    let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
+                 [ countChunksI logVar , I.joinI $ I.convStream corpusI it ])
+    res <- execPFEG iteratee st session
+    killThread threadID
+    return res
+
+recorder :: Statement -> MVar RecordData -> MVar () -> IO ()
+recorder s mvar cmd = do
+    takeMVar cmd
+    vals <- takeMVar mvar
+    void $ executeMany s vals
+    putMVar cmd ()
+
+type RecordData = [[SqlValue]]
+
+recordF :: MVar RecordData -> ItemProcessor (Int, RecordData)
+recordF mvar item = do
+    (i,vals) <- get
+    let vals' = item2SQL item:vals
+    if i == 10000
+       then put (0,[]) >> liftIO (putMVar mvar vals')
+       else put (i+1,vals')
+
+standardIteratee :: ItemProcessor st -> PFEGConfig -> Iteratee (Sentence Text) (PFEG st) ()
+standardIteratee proc session = I.mapChunksM_ $ mapM proc . getItems (targets session)
+
+type ItemProcessor st = Item Text -> PFEG st ()
+type ItemProcessor_ = ItemProcessor ()
+
+forkLogger :: Corpus -> PFEG () (ThreadId,Chan Int)
+forkLogger (cName,cFile) = do
+    session <- ask
+    liftIO $ do
+        logVar <- newChan
+        csize  <- withFile cFile ReadMode hFileSize
+        putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
+        threadID <- forkIO $ logger (fromIntegral csize `div` chunkSize session) logVar
+        return (threadID,logVar)
+
+{-
 type LogState = Int
 
 logResult :: MVar LogData -> PFEG LogState ()
@@ -127,18 +179,6 @@ logDataLine item (mm,result) = do
              , majorityBaseline session      -- majority baseline
              ] ++ res                        -- result tuples ordered by count
     liftIO $ hPutStrLn h line >> hFlush h
-
-commitTo :: Connection -> String -> Corpus -> IO ()
-commitTo conn action (cName,cFile) = do
-     timestamp <- getCurrentTime
-     prepare conn insertAction >>= void.flip execute
-       [toSql action, toSql cName, toSql cFile,toSql timestamp]
-     putStr "\nCommitting…" >> hFlush stdout
-     time <- doTimed_ $ commit conn
-     putStrLn $ "\rCommitted in "++ (renderSecs.round $ time)
-     putStr "\nCleaning up…" >> hFlush stdout
-     time' <- doTimed_ $ prepare conn cleanup >>= executeRaw
-     putStrLn $ "\rCleaned up in "++ (renderSecs.round $ time')
 
 process :: PFEGConfig -> IO ()
 process session =
@@ -202,16 +242,6 @@ workOnCorpora it session st = mapM $ \ c@(_cName,cFile) -> do
          _          -> return ()
     return res
 
-forkLogger :: Corpus -> PFEG () (ThreadId,Chan Int)
-forkLogger (cName,cFile) = do
-    session <- ask
-    liftIO $ do
-        logVar <- newChan
-        csize  <- withFile cFile ReadMode hFileSize
-        putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
-        threadID <- forkIO $ logger (fromIntegral csize `div` chunkSize session) logVar
-        return (threadID,logVar)
-
 -- | A strict update to monad state via @f@.
 modify' :: MonadState a m => (a -> a) -> m ()
 modify' f = do
@@ -237,17 +267,6 @@ token2list t = [surface t, pos t, lemma t]
 
 toList :: (a,a,a) -> [a]
 toList (a,b,c) = [a,b,c]
-
-noTarget :: Int -> PFEG a Text
-noTarget i = do
-    session <- ask
-    return $ targets session!!(i-1)
-
-targetNo :: Text -> PFEG a Int
-targetNo t = do
-    session <- ask
-    return $ 1+fromMaybe (error $ "Unknown target '" ++ T.unpack t ++ "' in " ++ show (targets session))
-                         (t `elemIndex` targets session)
 
 recorder :: MVar [[SqlValue]] -> MVar () -> Statement -> IO ()
 recorder mvar cmd statement = do
@@ -295,3 +314,8 @@ matchmodes = map MatchPattern
              , Nothing : Nothing : map Just [L,L]
              -- , Nothing : Nothing : map Just [P,P]
              ]
+
+data LogData = LogData
+    { logItem    :: !(Item Text)
+    , logResults :: [(MatchPattern,SqlValue)] }
+-}
