@@ -47,17 +47,15 @@ data PFEGConfig = PFEGConfig
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , resultLog :: Handle }
-                | Unigrams { corpora :: [Corpus] }
                 | Predict { corpora  :: [Corpus]
                           , matchPatterns :: [MatchPattern] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
 
-data RunMode = RunRecord | RunMatch | RunUnigrams | RunPredict
+data RunMode = RunRecord | RunMatch | RunPredict
 detectMode :: String -> Configurator RunMode
 detectMode "match" = return RunMatch
-detectMode "unigrams" = return RunUnigrams
 detectMode "record" = return RunRecord
 detectMode "predict" = return RunPredict
 detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
@@ -105,10 +103,6 @@ initialize modeString cfg = do
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train }
-                  RunUnigrams -> do
-                        train <- getCorpusSet cfg "main" "trainon"
-                        test  <- getCorpusSet cfg "main" "teston"
-                        return Unigrams { corpora = train ++ test }
                   RunPredict -> do
                         predict <- getCorpusSet cfg "main" "predicton"
                         patterns <- getValue cfg "main" "patterns" >>= parsePatterns
