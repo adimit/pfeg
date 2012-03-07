@@ -41,7 +41,8 @@ import System.Time.Utils (renderSecs)
 
 import qualified Data.Iteratee as I
 
-import Data.Attoparsec
+import qualified Data.Attoparsec as A
+import Data.Attoparsec (Parser)
 import Control.Applicative hiding (many)
 import Data.Word (Word8)
 
@@ -68,23 +69,30 @@ decode = liftM decodeUtf8
 
 tokenP :: Parser (Maybe (Token Text))
 tokenP = token <|> word
-    where token = do masked <- decode $ string (B.pack "-*-MASKED-*-") *> takeTill (==c28 '-')
-                     origin <- decode $ string (B.pack "-*-ORG-*-") *> takeTill (==c28 '-') <* string (B.pack "-*-")
+    where token = do (_:ts) <- delimiter *>
+                        A.takeTill (\w -> char '-' w || char '\t' w) `A.sepBy` delimiter
+                     let (forms,_:orig) = break (==originalMarker) (map decodeUtf8 ts)
                      finishToken (\p l -> Masked { pos = p
                                                 , lemma = l
-                                                , surface  = X.toCaseFold masked
-                                                , original = X.toCaseFold origin })
-          word = do s <- decode $ takeTill (==tab8)
+                                                , surface  = normalize (head forms)
+                                                , original = normalize (head orig)
+                                                , alternatives = map normalize (tail forms)})
+          word = do s <- decode $ A.takeTill (char '\t')
                     finishToken (\p l -> Word { pos = p, lemma = l, surface = normalize s })
-          finishToken f = do p <- decode $ skip (==tab8) *> takeTill (==tab8)
-                             l <- decode $ skip (==tab8) *> takeTill (==nl8)
-                             skip (==nl8)
+          finishToken f = do p <- decode $ A.skip (char '\t') *> A.takeTill (char '\t')
+                             l <- decode $ A.skip (char '\t') *> A.takeTill (char '\n')
+                             A.skip (char '\n')
                              if X.head p `elem` "$#`,:'()"
                                 then return Nothing
                                 else return . Just $ f p (normalize l)
 
 normalize :: Text -> Text
 normalize = ensureNotEmpty . filterPoop . X.toCaseFold
+
+delimiter :: Parser ByteString
+delimiter = A.string $ B.pack "-*-"
+originalMarker :: Text
+originalMarker = X.pack "ORG"
 
 nullToken :: Text
 nullToken = X.pack "NIX"
@@ -97,15 +105,15 @@ filterPoop :: Text -> Text
 filterPoop = X.filter (not.(`elem` "\"}{)([],"))
 
 sentenceP :: Parser (Sentence Text)
-sentenceP = return.catMaybes =<< tokenP `manyTill` word8 nl8 <* skipWhile (==nl8)
+sentenceP = return.catMaybes =<< tokenP `A.manyTill` A.word8 (c28 '\n') <* A.skipWhile (char '\n')
+
+char :: Char -> Word8 -> Bool
+char c = (==c28 c)
+{-# INLINE char #-}
 
 c28 :: Char -> Word8
 c28 = fromIntegral.fromEnum
 {-# INLINE c28 #-}
-
-nl8, tab8 :: Word8
-nl8  = c28 '\n'
-tab8 = c28 '\t'
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a

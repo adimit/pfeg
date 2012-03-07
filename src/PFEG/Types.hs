@@ -21,7 +21,11 @@ type Word a = (a,a,a)
 type Sentence a = [Token a]
 
 data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
-             | Masked { pos :: !a, lemma :: !a, surface :: !a, original :: !a }
+             | Masked { pos :: !a
+                      , lemma :: !a
+                      , surface :: !a
+                      , original :: !a
+                      , alternatives :: ![a] } deriving Show
 
 parsePattern :: String -> Either ParseError MatchPattern
 parsePattern = parse patternParser "match pattern"
