@@ -22,7 +22,6 @@ insertAction = "INSERT INTO log (action,corpusname,corpusfile,completed,version)
 upsertRecord :: String
 upsertRecord = "INSERT INTO records (lcs,rcs,lcl,rcl,target) VALUES (?,?,?,?,?)"
 
-
 item2SQL :: Item Text -> [SqlValue]
 item2SQL Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs), target = t } =
     [ tsql ls, tsql rs, tsql ll, tsql rl, toSql (surface t) ]

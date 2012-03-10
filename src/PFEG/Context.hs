@@ -5,6 +5,7 @@ module PFEG.Context
     , Item(..)
       -- * Transformation functions
     , getItems
+    , getMaskedItems
     ) where
 
 import PFEG.Types
@@ -28,6 +29,14 @@ data Item a = Item { itemLemma   :: !(Context a)
                    , itemSurface :: !(Context a)
                    , target      :: !(Token a)
                    } deriving (Functor,Show,Foldable,Traversable)
+
+getMaskedItems :: Sentence Text -> [Item Text]
+getMaskedItems s = let target_indices = findIndices isMasked s
+                   in map (getItem s) target_indices
+
+isMasked :: Token a -> Bool
+isMasked Masked {} = True
+isMasked _         = False
 
 getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices ((`elem` t).surface) s
