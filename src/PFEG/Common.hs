@@ -91,6 +91,7 @@ normalize = ensureNotEmpty . filterPoop . X.toCaseFold
 
 delimiter :: Parser ByteString
 delimiter = A.string $ B.pack "-*-"
+
 originalMarker :: Text
 originalMarker = X.pack "ORG"
 
