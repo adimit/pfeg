@@ -19,6 +19,7 @@ module PFEG.Common
     , corpusI
       -- * Misc
     , nullToken
+    , modify'
     ) where
 
 import PFEG.Types
@@ -27,6 +28,7 @@ import qualified Data.Text as X
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
+import Control.Monad.State.Strict
 import Data.Maybe (catMaybes)
 
 import qualified Data.ByteString.Char8 as B
@@ -151,3 +153,10 @@ logger total logVar = do
                   ++ " (" ++ show (round (100*ρ) :: Integer)
                   ++ "%) ETA: " ++ renderS eta ++ "   "
         hFlush stdout
+
+-- | A strict update to monad state via @f@.
+modify' :: MonadState a m => (a -> a) -> m ()
+modify' f = do
+    s <- get
+    put $! f s
+
