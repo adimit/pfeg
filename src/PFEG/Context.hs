@@ -6,10 +6,12 @@ module PFEG.Context
       -- * Transformation functions
     , getItems
     , getMaskedItems
+    , getMaskedItems'
     ) where
 
 import PFEG.Types
 
+import Control.Monad (liftM2)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -32,8 +34,17 @@ data Item a = Item { itemLemma   :: !(Context a)
 
 getMaskedItems :: Sentence Text -> [Item Text]
 getMaskedItems s = map (getItem s) $ findIndices isMasked s
-     where isMasked Masked {} = True
-           isMasked _         = False
+
+getMaskedItems' :: [Text] -> Sentence Text -> [Item Text]
+getMaskedItems' ts s = map (getItem s) $ findIndices (liftM2 (&&) isMasked (isTarget ts)) s
+
+isMasked :: Token a -> Bool
+isMasked Masked {} = True
+isMasked _         = False
+
+isTarget :: (Eq a) => [a] -> Token a -> Bool
+isTarget ts t | surface t `elem` ts = True
+              | otherwise           = False
 
 getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices ((`elem` t).surface) s
