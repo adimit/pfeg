@@ -31,12 +31,9 @@ data Item a = Item { itemLemma   :: !(Context a)
                    } deriving (Functor,Show,Foldable,Traversable)
 
 getMaskedItems :: Sentence Text -> [Item Text]
-getMaskedItems s = let target_indices = findIndices isMasked s
-                   in map (getItem s) target_indices
-
-isMasked :: Token a -> Bool
-isMasked Masked {} = True
-isMasked _         = False
+getMaskedItems s = map (getItem s) $ findIndices isMasked s
+     where isMasked Masked {} = True
+           isMasked _         = False
 
 getItems :: [Text] -> Sentence Text -> [Item Text]
 getItems t s = let target_indices = findIndices ((`elem` t).surface) s
