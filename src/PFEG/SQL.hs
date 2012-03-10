@@ -6,6 +6,7 @@ module PFEG.SQL
 
 import Database.HDBC
 
+import PFEG.Types
 import PFEG.Context
 
 import Data.Text (Text)
@@ -24,5 +25,5 @@ upsertRecord = "INSERT INTO records (lcs,rcs,lcl,rcl,target) VALUES (?,?,?,?,?)"
 
 item2SQL :: Item Text -> [SqlValue]
 item2SQL Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs), target = t } =
-    [ tsql ls, tsql rs, tsql ll, tsql rl, toSql t ]
+    [ tsql ls, tsql rs, tsql ll, tsql rl, toSql (surface t) ]
     where tsql = toSql . T.unwords

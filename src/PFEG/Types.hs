@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
 module PFEG.Types
     ( Wordcounts
     , Word
@@ -16,6 +17,9 @@ import Data.Hashable
 import Data.List (foldl')
 import Control.Monad (liftM)
 
+import Data.Traversable (Traversable)
+import Data.Foldable (Foldable)
+
 type Wordcounts = T.HashMap X.Text Int
 type Word a = (a,a,a)
 type Sentence a = [Token a]
@@ -25,7 +29,7 @@ data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
                       , lemma :: !a
                       , surface :: !a
                       , original :: !a
-                      , alternatives :: ![a] } deriving Show
+                      , alternatives :: ![a] } deriving (Show,Functor,Traversable,Foldable)
 
 parsePattern :: String -> Either ParseError MatchPattern
 parsePattern = parse patternParser "match pattern"

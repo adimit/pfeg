@@ -26,7 +26,7 @@ data Context a = Context { left  :: ![a]
 
 data Item a = Item { itemLemma   :: !(Context a)
                    , itemSurface :: !(Context a)
-                   , target      :: !a
+                   , target      :: !(Token a)
                    } deriving (Functor,Show,Foldable,Traversable)
 
 getItems :: [Text] -> Sentence Text -> [Item Text]
@@ -38,7 +38,7 @@ getItem s i = let (l,t:r) = splitAt i s
                   cc = Context l r
               in Item { itemLemma = fmap lemma cc
                       , itemSurface = fmap surface cc
-                      , target = surface t }
+                      , target = t }
 
 -- | Hash only the surface of an item, with an 'X' in between to keep apart [a,b] [] and [a] [b].
 instance Hashable (Item Text) where
