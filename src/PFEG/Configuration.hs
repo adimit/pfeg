@@ -102,8 +102,10 @@ initialize modeString cfg = do
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         shost <- getValue cfg "sphinx" "host"
+                        sport <- liftM read $ getValue cfg "sphinx" "port"
                         return Match { corpora   = test
                                      , searchConf= S.defaultConfig { S.host = shost
+                                                                   , S.port = sport
                                                                    , S.mode = Extended }
                                      , resultLog = resL }
                   RunRecord -> do
