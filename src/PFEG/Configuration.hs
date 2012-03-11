@@ -7,6 +7,8 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import Text.Search.Sphinx.Types (MatchMode(..))
+import qualified Text.Search.Sphinx as S
 import Data.Either (partitionEithers)
 import PFEG.Types
 import Control.Concurrent.Chan
@@ -46,6 +48,7 @@ data PFEGConfig = PFEGConfig
 
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
+                         , searchConf:: S.Configuration
                          , resultLog :: Handle }
                 | Predict { corpora  :: [Corpus]
                           , matchPatterns :: [MatchPattern] }
@@ -98,7 +101,10 @@ initialize modeString cfg = do
                   RunMatch -> do
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
+                        shost <- getValue cfg "sphinx" "host"
                         return Match { corpora   = test
+                                     , searchConf= S.defaultConfig { S.host = shost
+                                                                   , S.mode = Extended }
                                      , resultLog = resL }
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
