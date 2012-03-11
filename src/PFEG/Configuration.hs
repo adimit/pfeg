@@ -7,7 +7,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
-import Text.Search.Sphinx.Types (GroupByFunction(..),MatchMode(..))
+import Text.Search.Sphinx.Types (Sort(..),GroupByFunction(..),MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Data.Either (partitionEithers)
 import PFEG.Types
@@ -109,6 +109,8 @@ initialize modeString cfg = do
                                         , S.port        = sport
                                         , S.groupByFunc = Attr
                                         , S.groupBy     = "target"
+                                        , S.sort        = AttrDesc
+                                        , S.sortBy      = "target"
                                         , S.mode        = Extended }
                                      , resultLog        = resL }
                   RunRecord -> do
