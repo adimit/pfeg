@@ -33,8 +33,6 @@ import Data.Maybe (catMaybes)
 
 import qualified Data.ByteString.Char8 as B
 import Data.ByteString (ByteString)
-import Control.Monad.IO.Class (MonadIO,liftIO)
-import Control.Monad (forever,liftM)
 import Control.Concurrent.Chan
 import Data.Attoparsec.Iteratee
 import Data.Iteratee.Base
