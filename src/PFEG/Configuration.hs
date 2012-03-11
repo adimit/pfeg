@@ -7,7 +7,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
-import Text.Search.Sphinx.Types (MatchMode(..))
+import Text.Search.Sphinx.Types (GroupByFunction(..),MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Data.Either (partitionEithers)
 import PFEG.Types
@@ -103,11 +103,14 @@ initialize modeString cfg = do
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         shost <- getValue cfg "sphinx" "host"
                         sport <- liftM read $ getValue cfg "sphinx" "port"
-                        return Match { corpora   = test
-                                     , searchConf= S.defaultConfig { S.host = shost
-                                                                   , S.port = sport
-                                                                   , S.mode = Extended }
-                                     , resultLog = resL }
+                        return Match { corpora          = test
+                                     , searchConf       = S.defaultConfig
+                                        { S.host        = shost
+                                        , S.port        = sport
+                                        , S.groupByFunc = Attr
+                                        , S.groupBy     = "target"
+                                        , S.mode        = Extended }
+                                     , resultLog        = resL }
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train }
