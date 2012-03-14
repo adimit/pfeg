@@ -17,6 +17,7 @@ Executable pfeg
                    , MissingH >= 1.1.1.0
                    , HDBC-mysql
                    , parsec >= 3.1.2
+                   , sphinx
     ghc-options:   -O2 -Wall -threaded -rtsopts -funbox-strict-fields
     Main-is:       tools/pfeg.hs
 
