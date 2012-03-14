@@ -1,9 +1,12 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
-import Data.Time.Clock (getCurrentTime)
-import qualified Text.Parsec.Text as PT
-import Text.ParserCombinators.Parsec
+import qualified Text.Search.Sphinx.Types as Sphinx
+import Text.Search.Sphinx.Types (QueryResult(..))
+import Text.Search.Sphinx hiding (sortBy,mode)
+import Data.Binary.Put (Put)
+
+import qualified Data.ByteString.Lazy.Char8 as B
 import PFEG
 import PFEG.Types
 import PFEG.SQL
@@ -12,21 +15,18 @@ import PFEG.Context
 
 import Prelude hiding (log)
 
-import System.Time.Utils (renderSecs)
-import Data.List (sortBy,elemIndex,foldl',intercalate)
+import Data.List (sortBy,intercalate)
 
 import Data.Function (on)
 
 import Data.Iteratee.Base
 import qualified Data.Iteratee as I
 import Data.Iteratee.IO
-import Data.Maybe (fromMaybe)
 
 import System.IO
 
 import qualified Data.Text as T
 import Data.Text (Text)
-import qualified Data.HashMap.Strict as M
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
@@ -43,8 +43,6 @@ import Graphics.Vty.Terminal
 
 import PFEG.Configuration
 import qualified ReadArgs as RA
-
-import Codec.Digest.SHA
 
 main :: IO ()
 main = do
@@ -75,6 +73,137 @@ process session =
           let it = standardIteratee (recordF mvar) session
           void $ workOnCorpora it session (0,[]) cs
           putStrLn "Waiting for DB…" >> takeMVar cmd
+        Match{ corpora = cs, resultLog = l } -> do
+          chan <- newChan
+          void $ forkIO (evalStateT (matchLogger l chan) initialMatcherState)
+          let it = standardIteratee (matchF chan) session
+          void $ workOnCorpora it session () cs
+        Predict { } -> undefined
+
+matchLogger :: Handle -> Chan (Item Text, Sphinx.Result [QueryResult]) -> StateT MatcherState IO ()
+matchLogger l c = do
+    next
+    (item,result) <- liftIO $ readChan c
+    results <- case result of
+         (Sphinx.Warning warn a) -> liftIO (putStrLn $ "WARNING: " ++ B.unpack warn) >> return a
+         (Sphinx.Ok a)           -> return a
+         (Sphinx.Error code msg) -> liftIO (putStrLn $ "ERROR ("++ show code++"): " ++ B.unpack msg) >> return []
+         (Sphinx.Retry msg)      -> liftIO (putStrLn $ "RETRY: " ++ B.unpack msg) >> return []
+    let preds = zip (map parseResult results) patterns
+        log' = uncurry $ logDataLine item
+    ls <- mapM log' preds
+    liftIO $ forM_ ls (\line -> hPutStr l line >> hFlush l)
+
+logDataLine :: Item Text -> Prediction -> SphinxPattern -> StateT MatcherState IO String
+logDataLine Item { itemLemma = Context lcl rcl
+                 , itemSurface = Context lcs rcs
+                 , target = w } ps p = do
+    (MatcherState x _) <- get
+    return $ intercalate "\t" $
+        [ show x                        -- item number
+        , T.unpack . surface $ w        -- actually there
+        , show p ]                      -- pattern
+        ++ predictions ps               -- our predictions
+        ++ map untext [lcl,rcl,lcs,rcs] -- the item
+
+-- first three predictions
+predictions :: Prediction -> [String]
+predictions ps = take 3 $ concatMap (\ (a,b) -> [T.unpack a,show b] ) ps ++ repeat ""
+
+untext :: [Text] -> String
+untext = T.unpack . T.unwords
+
+next, correct :: MonadState MatcherState m => m ()
+next    = modify' $ \ (MatcherState t c) -> MatcherState (t+1) c
+correct = modify' $ \ (MatcherState t c) -> MatcherState t (c+1)
+
+data Score = Score
+    { totalScored       :: !Int
+    , scoreAAA          :: !Int
+    , scoreAAB          :: !Int
+    , scoreABA          :: !Int
+    , scoreABB          :: !Int
+    , scoreABC          :: !Int
+    , scoreAAAContained :: !Int
+    , scoreAABContained :: !Int
+    } deriving Show
+
+{-score :: Score -> Token Text -> Prediction -> Score
+score s Masked { original = orig, surface = sfc, alternatives = alts } ps = undefined
+
+nullScore :: Score
+nullScore = undefined -}
+
+type Prediction = [(Text,Int)]
+data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int }
+
+parseResult :: QueryResult -> Prediction
+parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
+    where getMatch :: Sphinx.Match -> (Text,Int)
+          getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
+             case attrs of
+                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (T.pack . B.unpack $ t, c)
+                  _ -> error $ "Malformed search result: " ++ show attrs
+
+initialMatcherState :: MatcherState
+initialMatcherState = MatcherState 0 0
+
+correctPrediction :: (MonadState MatcherState m) => m ()
+correctPrediction = modify' (\MatcherState { totalMatches = t, correctMatches = c } ->
+                              MatcherState (t+1) (c+1))
+
+matchF :: Chan (Item Text, Sphinx.Result [QueryResult]) -> ItemProcessor_
+matchF log item = do
+    session <- ask
+    queries <- mapM (makeAQuery item) patterns
+    results <- liftIO $ runQueries (searchConf.pfegMode $ session) queries
+    liftIO $ writeChan log (item,results)
+
+data SphinxPattern = Surface { width :: !Int, tolerance :: !Int }
+                   | Lemma   { width :: !Int, tolerance :: !Int }
+
+-- TODO: add a Parser SphinxPattern so we can put patterns in the config
+
+instance Show SphinxPattern where
+    show p = getLetter p : show (width p) ++ show (tolerance p)
+
+testItem, testItem' :: Item String
+testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule"]
+                 , itemLemma   = Context ["ich","gehen"] ["d", "schule"]
+                 , target = Word "in" "in" "in" }
+
+testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni"]
+                 , itemLemma   = Context ["ich","gehen"] ["d", "uni"]
+                 , target = Word "auf" "auf" "auf" }
+
+getLetter :: SphinxPattern -> Char
+getLetter Surface {} = 's'
+getLetter Lemma   {} = 'l'
+
+makeQuery :: Item Text -> SphinxPattern -> String
+makeQuery i p =
+    mkC 'l' (unText lc) ++ " " ++ mkC 'r' (unText rc)
+    where (lc,rc) = getContext i p
+          mkC side c = '@':side:'c':getLetter p:" \"" ++ c ++ "\"" ++ tol
+          unText = T.unpack . T.unwords
+          tol = case tolerance p of
+                0 -> ""
+                x -> '~':show x
+
+getContext :: Item a -> SphinxPattern -> ([a],[a])
+getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
+getContext Item { itemLemma   = (Context ls rs) } (Lemma {width = w})   = makeContext ls rs w
+makeContext :: [a] -> [a] -> Int -> ([a],[a])
+makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
+
+makeAQuery :: Item Text -> SphinxPattern -> PFEG a Put
+makeAQuery item pattern = do
+    let q = makeQuery item pattern
+    conf <- liftM (searchConf.pfegMode) ask
+    return $ addQuery conf q "*" (show pattern)
+
+patterns :: [SphinxPattern]
+patterns = [ Surface x y | x <- [3,2,1], y <- [0..2] ] ++ [ Lemma x y | x <- [3,2] , y <-[0..1] ]
 
 workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
 workOnCorpora it session st = mapM $ \ c@(_cName,cFile) -> do
@@ -117,205 +246,3 @@ forkLogger (cName,cFile) = do
         putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
         threadID <- forkIO $ logger (fromIntegral csize `div` chunkSize session) logVar
         return (threadID,logVar)
-
-{-
-type LogState = Int
-
-logResult :: MVar LogData -> PFEG LogState ()
-logResult resV = forever $ do
-    (LogData item results) <- liftIO $ takeMVar resV
-    mapM_ (logDataLine item) results
-    modify' (+1)
-
-resultParser :: PT.Parser Result
-resultParser = between (char '(') (char ')') $ do
-    (offset,array) <- option ((0,0),[]) (between (char '"') (char '"') parseArray <|> parseArray)
-    void $ char ','
-    counts <- parseInt
-    return Result { targetHitCounts = take 10 $ replicate (fst offset - 1) 0 ++  array ++ repeat 0
-                  , contextHits = counts }
-
-parseArray :: PT.Parser ((Int,Int),[Int])
-parseArray = do
-    offset <- option (1,1) parseOffset
-    array  <- between (char '{') (char '}') $ parseInt `sepBy` char ','
-    return (offset,array)
-
-parseInt :: PT.Parser Int
-parseInt = liftM read (many1 digit) <|> (string "NULL" >> return 0)
-
-parseOffset :: PT.Parser (Int,Int)
-parseOffset = do res <- between (char '[') (char ']') $ do
-                         start <- parseInt
-                         end   <- char ':' >> parseInt
-                         return (start,end)
-                 void $ char '='
-                 return res
-
-data Result = Result { targetHitCounts :: ![Int], contextHits :: !Int } deriving Show
-
-renderResult :: [Text] -> Result -> [String]
-renderResult ts Result { targetHitCounts = thc, contextHits = c } =
-    show c : concatMap tupleToString (sortBy (flip compare `on` fst) (zip thc ts))
-    where tupleToString :: (Int,Text) -> [String]
-          tupleToString (i,t) = [T.unpack t , show i]
-
-logDataLine :: Item Text -> (MatchPattern, SqlValue) -> PFEG LogState ()
-logDataLine item (mm,result) = do
-    session <- ask
-    i <- get
-    let h    = resultLog . pfegMode $ session
-        res  = case parse resultParser "SQL result" (fromSql result) of
-                    (Left err) -> [show err]
-                    (Right r ) -> renderResult (targets session) r
-        cxs (Context x) = unwords . map T.unpack $ x
-        line = intercalate "\t" $            -- Column format (tab separated:)
-             [ show i                        -- Item number
-             , cxs . sItem $ item            -- Item surface
-             , cxs . lItem $ item            -- Item lemmas
-             , cxs . pItem $ item            -- Item part of speech tags
-             , T.unpack . target $ item      -- Item original target functional element
-             , show mm                       -- match pattern
-             , majorityBaseline session      -- majority baseline
-             ] ++ res                        -- result tuples ordered by count
-    liftIO $ hPutStrLn h line >> hFlush h
-
-process :: PFEGConfig -> IO ()
-process session =
-    case pfegMode session of
-        Record{ corpora = cs } -> do
-          statement <- prepare (database session) upsertRecord
-          mvar <- newEmptyMVar
-          cmd <- newMVar ()
-          void $ forkIO . forever $ recorder mvar cmd statement
-          let it = standardIteratee (recordF mvar) session
-          void $ workOnCorpora it session (0,[]) cs
-          putStrLn "Waiting for DB…" >> takeMVar cmd
-        Match{ corpora = cs } -> do
-          statement <- prepare (database session) queryDatabase
-          logVar <- newEmptyMVar
-          threadID <- forkIO $ evalPFEG (logResult logVar) 1 session
-          let it = standardIteratee (matchF statement logVar) session
-          void $ workOnCorpora it session () cs
-          killThread threadID
-        Unigrams{ corpora = cs } -> do
-          statement <- prepare (database session) upsertUnigram
-          cmd <- newMVar ()
-          mvar <- newEmptyMVar
-          void $ forkIO . forever $ recorder mvar cmd statement
-          void $ workOnCorpora (uniI mvar) session M.empty cs
-          putStrLn "Waiting for DB…" >> takeMVar cmd
-        Predict{ corpora = cs } -> do
-          statement <- prepare (database session) queryDatabase
-          let it = standardIteratee (predictF statement) session
-          void $ workOnCorpora it session nullScore cs
-
-standardIteratee :: ItemProcessor st -> PFEGConfig -> Iteratee (Sentence Text) (PFEG st) ()
-standardIteratee proc session = I.mapChunksM_ $ mapM proc . getItems (targets session)
-
-type ItemProcessor st = Item Text -> PFEG st ()
-type ItemProcessor_ = ItemProcessor ()
-
-data PredictScore = PScore {  }
-
-nullScore :: PredictScore
-nullScore = PScore
-
-predictF :: Statement -> ItemProcessor PredictScore
-predictF = undefined
-
-commitHistogram :: Statement -> Histogram -> IO ()
-commitHistogram upsert hist = do
-    time <- doTimed_ $ executeMany upsert (map (\ (k,v) -> [toSql k, toSql v]) (M.toList hist))
-    putStrLn $ renderS time
-
-workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
-workOnCorpora it session st = mapM $ \ c@(_cName,cFile) -> do
-    (threadID,logVar) <- evalPFEG (forkLogger c) () session
-    let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
-                 [ countChunksI logVar , I.joinI $ I.convStream corpusI it ])
-    res <- execPFEG iteratee st session
-    killThread threadID
-    case pfegMode session of
-         Record{}   -> commitTo (database session) "record" c
-         Unigrams{} -> commitTo (database session) "unigram" c
-         _          -> return ()
-    return res
-
--- | A strict update to monad state via @f@.
-modify' :: MonadState a m => (a -> a) -> m ()
-modify' f = do
-    s <- get
-    put $! f s
-
-uniI :: MVar [[SqlValue]] -> I.Iteratee (Sentence Text) (PFEG Histogram) ()
-uniI mvar = I.liftI step
-    where step (Chunk sent) = do lift $ modify' (treatSentence sent)
-                                 I.liftI step
-          step stream       = do hist <- lift get
-                                 liftIO $ mvar `putMVar`
-                                    (map (\ (k,v) -> [toSql k, toSql v]) . M.toList $ hist)
-                                 I.idone () stream
-          treatSentence :: Sentence Text -> Histogram -> Histogram
-          treatSentence sent hist = foldl' (flip f) hist (concatMap token2list sent)
-          f t = M.insertWith (+) t 1
-
-type Histogram = M.HashMap Text Int
-
-token2list :: Token a -> [a]
-token2list t = [surface t, pos t, lemma t]
-
-toList :: (a,a,a) -> [a]
-toList (a,b,c) = [a,b,c]
-
-recorder :: MVar [[SqlValue]] -> MVar () -> Statement -> IO ()
-recorder mvar cmd statement = do
-    takeMVar cmd
-    vals <- takeMVar mvar
-    time <- doTimed_ $ executeMany statement vals 
-    putStrLn $ "Insertion took" ++ renderS time
-    putMVar cmd ()
-
-recordF :: MVar [[SqlValue]] -> ItemProcessor (Int, [[SqlValue]])
-recordF mvar item@Item{target = t} = do
-    tn <- targetNo t
-    (i,vals) <- get
-    let vals' = [ toSql . showBSasHex . hash SHA256 $ item
-                , toSql tn , item2SQL item]:vals
-    if i == 5000
-       then put (0,[]) >> liftIO (putMVar mvar vals')
-       else put (i+1,vals')
-
-matchF :: Statement -> MVar LogData -> ItemProcessor_
-matchF statement logVar i = do
-    results <- mapM (matchAPattern statement i) matchmodes
-    liftIO $ putMVar logVar (LogData i (zip matchmodes results))
-
--- given a pattern, matcherInit and an Item, give a result from the database
--- helper function for @matchF@.
-matchAPattern :: Statement -> Item Text -> MatchPattern -> PFEG_ SqlValue
-matchAPattern statement i mm = do
-    let (p,payload) = item2postgresArrays T.unpack i mm
-    rows <- liftIO $ execute statement [p,payload] >> fetchAllRows' statement
-    case rows of
-         [result:[]] -> return result
-         xs -> error $ "SQL barfed! " ++ show xs
-
--- preliminary list of matchmodes
-matchmodes :: [MatchPattern]
-matchmodes = map MatchPattern
-             [ map Just [S,S,S,S,S,S]
-             , map Just [L,L,L,L,L,L]
-             -- , map Just [P,P,P,P,P,P]
-             , Nothing : map Just [S,S,S,S]
-             , Nothing : map Just [L,L,L,L]
-             -- , Nothing : map Just [P,P,P,P]
-             , Nothing : Nothing : map Just [S,S]
-             , Nothing : Nothing : map Just [L,L]
-             -- , Nothing : Nothing : map Just [P,P]
-             ]
-
-data LogData = LogData
-    { logItem    :: !(Item Text)
-    , logResults :: [(MatchPattern,SqlValue)] }
--}
