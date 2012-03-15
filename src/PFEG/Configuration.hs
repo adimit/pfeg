@@ -9,8 +9,6 @@ module PFEG.Configuration
 
 import Text.Search.Sphinx.Types (Sort(..),GroupByFunction(..),MatchMode(..))
 import qualified Text.Search.Sphinx as S
-import Data.Either (partitionEithers)
-import PFEG.Types
 import Control.Concurrent.Chan
 import Data.Ini.Types
 import Data.Ini.Reader
@@ -50,8 +48,7 @@ data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , searchConf:: S.Configuration
                          , resultLog :: Handle }
-                | Predict { corpora  :: [Corpus]
-                          , matchPatterns :: [MatchPattern] }
+                | Predict { corpora  :: [Corpus] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
@@ -118,8 +115,7 @@ initialize modeString cfg = do
                         return Record { corpora = train }
                   RunPredict -> do
                         predict <- getCorpusSet cfg "main" "predicton"
-                        patterns <- getValue cfg "main" "patterns" >>= parsePatterns
-                        return Predict { corpora = predict, matchPatterns = patterns }
+                        return Predict { corpora = predict }
     liftIO $ putStrLn "Done."
     return PFEGConfig { pfegMode   = runas
                       , database   = db
@@ -127,13 +123,6 @@ initialize modeString cfg = do
                       , targets    = targs
                       , majorityBaseline = majB
                       , chunkSize  = csize }
-
-parsePatterns :: String -> Configurator [MatchPattern]
-parsePatterns s =
-    let (errors,values) = partitionEithers . map parsePattern . splitOn "," $ s
-    in case errors of
-            [] -> return values
-            xs -> throwError $ GenericError ("Unable to parse match patterns: " ++ show xs)
 
 splitAndStrip :: String -> [Text]
 splitAndStrip = map (T.strip . T.pack) . splitOn ","
