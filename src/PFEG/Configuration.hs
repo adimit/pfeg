@@ -48,7 +48,9 @@ data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , searchConf:: S.Configuration
                          , resultLog :: Handle }
-                | Predict { corpora  :: [Corpus] }
+                | Predict { corpora  :: [Corpus]
+                          , searchConf:: S.Configuration
+                          , resultLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
@@ -94,28 +96,24 @@ initialize modeString cfg = do
     statC <- liftC newChan
     majB  <- getValue cfg "main" "majorityBaseline"
     mode <- detectMode modeString
+    shost <- getValue cfg "sphinx" "host"
+    sport <- liftM read $ getValue cfg "sphinx" "port"
     runas <- case mode of
                   RunMatch -> do
                         test  <- getCorpusSet cfg "main" "teston"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
-                        shost <- getValue cfg "sphinx" "host"
-                        sport <- liftM read $ getValue cfg "sphinx" "port"
-                        return Match { corpora          = test
-                                     , searchConf       = S.defaultConfig
-                                        { S.host        = shost
-                                        , S.port        = sport
-                                        , S.groupByFunc = Attr
-                                        , S.groupBy     = "target"
-                                        , S.sort        = AttrDesc
-                                        , S.sortBy      = "target"
-                                        , S.mode        = Extended }
-                                     , resultLog        = resL }
+                        return Match { corpora    = test
+                                     , searchConf = defaultSearchConf shost sport
+                                     , resultLog  = resL }
                   RunRecord -> do
                         train <- getCorpusSet cfg "main" "trainon"
                         return Record { corpora = train }
                   RunPredict -> do
                         predict <- getCorpusSet cfg "main" "predicton"
-                        return Predict { corpora = predict }
+                        resL <- openHandle AppendMode cfg "main" "predictLog"
+                        return Predict { corpora    = predict
+                                       , searchConf = defaultSearchConf shost sport
+                                       , resultLog  = resL }
     liftIO $ putStrLn "Done."
     return PFEGConfig { pfegMode   = runas
                       , database   = db
@@ -123,6 +121,16 @@ initialize modeString cfg = do
                       , targets    = targs
                       , majorityBaseline = majB
                       , chunkSize  = csize }
+
+defaultSearchConf :: String -> Int -> S.Configuration
+defaultSearchConf shost sport = S.defaultConfig
+     { S.host        = shost
+     , S.port        = sport
+     , S.groupByFunc = Attr
+     , S.groupBy     = "target"
+     , S.sort        = AttrDesc
+     , S.sortBy      = "target"
+     , S.mode        = Extended }
 
 splitAndStrip :: String -> [Text]
 splitAndStrip = map (T.strip . T.pack) . splitOn ","
