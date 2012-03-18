@@ -41,6 +41,7 @@ data PFEGConfig = PFEGConfig
     , database   :: Connection -- ^ The connection to the main database
     , targets    :: [Text] -- ^ Targets for this run
     , majorityBaseline :: String
+    , sphinxIndex :: String
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
     }
 
@@ -98,6 +99,7 @@ initialize modeString cfg = do
     mode <- detectMode modeString
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
+    sindex <- getValue cfg "sphinx" "index"
     runas <- case mode of
                   RunMatch -> do
                         test  <- getCorpusSet cfg "main" "teston"
@@ -118,6 +120,7 @@ initialize modeString cfg = do
     return PFEGConfig { pfegMode   = runas
                       , database   = db
                       , statusLine = statC
+                      , sphinxIndex= sindex
                       , targets    = targs
                       , majorityBaseline = majB
                       , chunkSize  = csize }

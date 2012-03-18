@@ -284,7 +284,8 @@ makeAQuery :: Item Text -> SphinxPattern -> PFEG a Put
 makeAQuery item pattern = do
     let q = makeQuery item pattern
     conf <- liftM (searchConf.pfegMode) ask
-    return $ addQuery conf q "*" (show pattern)
+    index <- liftM sphinxIndex ask
+    return $ addQuery conf q index (show pattern)
 
 patterns :: [SphinxPattern]
 patterns = [ Surface x y | x <- [4,3,2,1], y <- [0,1,2] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [0,1,2] ]
