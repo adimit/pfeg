@@ -90,6 +90,7 @@ matchF :: QueryChan -> ItemProcessor_
 matchF log item = do
     session <- ask
     queries <- mapM (makeAQuery item) patterns
+    liftIO $ putStrLn "Querying…"
     (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
     liftIO $ writeChan log (item,results,time)
 
