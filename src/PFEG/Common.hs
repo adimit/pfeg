@@ -69,7 +69,7 @@ decode = liftM decodeUtf8
 
 tokenP :: Parser (Maybe (Token Text))
 tokenP = token <|> word
-    where token = do (_:ts) <- delimiter *>
+    where token = do ts <- A.string (B.pack "-*-MASKED-*-") *>
                         A.takeTill (\w -> char '-' w || char '\t' w) `A.sepBy` delimiter
                      let (forms,_:orig) = break (==originalMarker) (map decodeUtf8 ts)
                      finishToken (\p l -> Masked { pos = p
