@@ -247,6 +247,7 @@ data SphinxPattern = Surface { width :: !Int, tolerance :: !Int }
 -- TODO: add a Parser SphinxPattern so we can put patterns in the config
 
 instance Show SphinxPattern where
+    show MajorityBaseline = "majority baseline"
     show p = getLetter p : show (width p) ++ show (tolerance p)
 
 testItem, testItem' :: Item String
