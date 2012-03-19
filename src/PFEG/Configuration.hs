@@ -102,16 +102,16 @@ initialize modeString cfg = do
     sindex <- getValue cfg "sphinx" "index"
     runas <- case mode of
                   RunMatch -> do
-                        test  <- getCorpusSet cfg "main" "teston"
+                        test  <- getCorpusSet cfg "tasks" "match"
                         resL  <- openHandle AppendMode cfg "main" "resultLog"
                         return Match { corpora    = test
                                      , searchConf = defaultSearchConf shost sport
                                      , resultLog  = resL }
                   RunRecord -> do
-                        train <- getCorpusSet cfg "main" "trainon"
+                        train <- getCorpusSet cfg "tasks" "record"
                         return Record { corpora = train }
                   RunPredict -> do
-                        predict <- getCorpusSet cfg "main" "predicton"
+                        predict <- getCorpusSet cfg "tasks" "predict"
                         resL <- openHandle AppendMode cfg "main" "predictLog"
                         return Predict { corpora    = predict
                                        , searchConf = defaultSearchConf shost sport
