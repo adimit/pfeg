@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS pfeg_de.records
     , lcl TEXT
     , rcl TEXT
     , target varchar(20) NOT NULL
-    );
+    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
 
 CREATE TABLE IF NOT EXISTS pfeg_de.log
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
@@ -13,4 +13,5 @@ CREATE TABLE IF NOT EXISTS pfeg_de.log
     , completed DATE
     , version VARCHAR(10)
     , corpusfile VARCHAR(200)
-    , corpusname VARCHAR(10) );
+    , corpusname VARCHAR(10)
+    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
