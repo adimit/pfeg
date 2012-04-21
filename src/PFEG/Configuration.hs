@@ -92,7 +92,7 @@ initialize :: String -> Config -> Configurator PFEGConfig
 initialize modeString cfg = do
     connInfo <- getMySQLInfo cfg
     db  <- liftC . withRTSSignalsBlocked . connectMySQL $ connInfo
-    liftC $ prepare db "SET NAMES 'utf8" >>= executeRaw
+    liftC $ prepare db "SET NAMES 'utf8'" >>= executeRaw
     csize <- readChunkSize cfg
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
