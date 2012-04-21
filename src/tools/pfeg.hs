@@ -151,20 +151,20 @@ matchLogger l c = do
     let preds = zip (map parseResult results) patterns
     (newScore,winningPattern,bestPrediction) <- score currentScore (target item) (map fst preds)
     put $! newScore
-    let log' = uncurry $ logDataLine item time
-    ls <- mapM log' preds
-    liftIO $ forM_ ls (\line -> hPutStrLn l line >> hFlush l)
-    liftIO . putStrLn $ "P: " ++ T.unpack bestPrediction ++
-                      "\nA: " ++ show (target item) ++
-                      "\nT: " ++ renderS time ++
-                      "\nS: " ++ show newScore ++
-                      "\nX: " ++ show winningPattern
+    ls <- mapM (uncurry $ logDataLine item time) preds
+    liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
+                putStrLn $ "P: " ++ T.unpack bestPrediction ++
+                         "\nA: " ++ show (target item) ++
+                         "\nT: " ++ renderS time ++
+                         "\nS: " ++ show newScore ++
+                         "\nX: " ++ show winningPattern
     matchLogger l c
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
-scoreboard s@PredictScore { } = map show (zipWith ($) ([totalScored, scoreCorrect] ++ canonicalPredictScore) 
-                                                       (repeat s))
+scoreboard s@PredictScore { } = map show (zipWith ($) 
+                                          ([totalScored, scoreCorrect] ++ canonicalPredictScore)
+                                          (repeat s))
 
 canonicalPredictScore :: [Score -> Int]
 canonicalPredictScore = [ scoreAAA
