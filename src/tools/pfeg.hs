@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
+import Data.Text.Encoding (encodeUtf8,decodeUtf8)
+import qualified Data.ByteString.Char8 as BS
 import Data.Time.Clock (NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
@@ -229,10 +231,12 @@ data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int 
 
 parseResult :: QueryResult -> Prediction
 parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
-    where getMatch :: Sphinx.Match -> (Text,Int)
+    where utf8ify :: B.ByteString -> Text               -- Work around haskell-shpinx bugged
+          utf8ify = decodeUtf8 . BS.concat . B.toChunks -- treatment of utf8. See todo.org
+          getMatch :: Sphinx.Match -> (Text,Int)
           getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
              case attrs of
-                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (T.pack . B.unpack $ t, c)
+                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (utf8ify t, c)
                   _ -> error $ "Malformed search result: " ++ show attrs
 
 initialMatcherState :: MatcherState
@@ -271,7 +275,8 @@ makeQuery i p =
     mkC 'l' (unText lc) ++ " " ++ mkC 'r' (unText rc)
     where (lc,rc) = getContext i p
           mkC side c = '@':side:'c':getLetter p:" \"" ++ c ++ "\"" ++ tol
-          unText = T.unpack . T.unwords
+          unText :: [Text] -> String                  -- work around borked haskell-sphinx
+          unText = BS.unpack . encodeUtf8 . T.unwords -- unicode handling. See todo.org
           tol = case tolerance p of
                 0 -> ""
                 x -> '~':show x
