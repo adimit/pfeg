@@ -130,7 +130,8 @@ whichCase s@PredictScore { } p gold orig alts
 findBestPrediction :: [Prediction] -> PFEG a (Text,SphinxPattern)
 findBestPrediction ps = do
     def <- liftM (T.pack . majorityBaseline) ask
-    return $ fromMaybe (def, MajorityBaseline) (listToMaybe . catMaybes $ zipWith f (map listToMaybe ps) patterns)
+    return $ fromMaybe (def, MajorityBaseline) (listToMaybe . catMaybes $
+             zipWith f (map listToMaybe ps) patterns)
     where f Nothing _ = Nothing
           f (Just (x,_))  p = Just (x,p)
 
@@ -139,7 +140,8 @@ getQueryResults result =
     case result of
          (Sphinx.Warning warn a) -> putStrLn ("WARNING: " ++ B.unpack warn) >> return a
          (Sphinx.Ok a)           -> return a
-         (Sphinx.Error code msg) -> putStrLn ("ERROR ("++ show code++"): " ++ B.unpack msg) >> return []
+         (Sphinx.Error code msg) -> putStrLn ("ERROR ("++ show code++"): " ++ B.unpack msg)
+                                    >> return []
          (Sphinx.Retry msg)      -> putStrLn ("RETRY: " ++ B.unpack msg) >> return []
 
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
@@ -277,7 +279,8 @@ makeQuery i p =
 getContext :: Item a -> SphinxPattern -> ([a],[a])
 getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
 getContext Item { itemLemma   = (Context ls rs) } (Lemma {width = w})   = makeContext ls rs w
-getContext _ MajorityBaseline = error "We don't expect to get the context of a majority baseline pattern!"
+getContext _ MajorityBaseline = error
+    "We don't expect to get the context of a majority baseline pattern!"
 
 makeContext :: [a] -> [a] -> Int -> ([a],[a])
 makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
