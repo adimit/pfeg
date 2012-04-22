@@ -284,8 +284,7 @@ makeQuery i p =
 getContext :: Item a -> SphinxPattern -> ([a],[a])
 getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
 getContext Item { itemLemma   = (Context ls rs) } (Lemma {width = w})   = makeContext ls rs w
-getContext _ MajorityBaseline = error
-    "We don't expect to get the context of a majority baseline pattern!"
+getContext _ MajorityBaseline = ([],[])
 
 makeContext :: [a] -> [a] -> Int -> ([a],[a])
 makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
