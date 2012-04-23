@@ -1,10 +1,8 @@
 CREATE TABLE IF NOT EXISTS pfeg_de.records
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
-    , lcs TEXT
-    , rcs TEXT
-    , lcl TEXT
-    , rcl TEXT
-    , target varchar(20) NOT NULL
+    , surface TEXT
+    , lemma TEXT
+    , pos TEXT
     ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
 
 CREATE TABLE IF NOT EXISTS pfeg_de.log
