@@ -1,9 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module PFEG.Common
-    ( -- * Types
-      Wordcounts
-      -- * Measuring execution times and logging
-    , doTimed
+    ( -- * Measuring execution times and logging
+      doTimed
     , doTimed_
     , renderS
     , logger
