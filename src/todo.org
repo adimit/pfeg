@@ -1,0 +1,95 @@
+* Bugs
+  - [ ] Encoding issues need to be fixed
+  - [ ] Even when testing and training on the same set, we sometimes go down
+  below s40, or even to majority baseline. That can't be right, something's
+  fishy. It's probably the encoding, but I *need* to make sure that it won't be
+  the case anymore _after_ the encoding actually gets fixed.
+  This also currently gives us a theoretical maximum performance (training and
+  testing on the same set) of maximum 75%, which *should not be the case*,
+  dammit (though this might also be affected by the encoding issues causing
+  trouble with für, or should I say "fÃ¼r.")
+* Search Engine
+** Efficiency
+   Current method of search is inefficient. Storing the contexts multiple times
+   doesn't seem to be a good idea. Better to implement some sort of full-text
+   search.
+   Targets are stopwords. What metadata capabilities does sphinx have?
+** Stopwords
+   Having stopwords is kinda silly, but I don't see a way around it for now.
+** Alternatives
+*** Full Text
+    Necessary fields:
+    - sentence, docid
+    we'd just record everything as-is, then search like
+    "gehe morgen" NEAR/1 "das neue"
+    or so. Make sure that we won't fuck up wrt to sequencing.
+*** Zone for contexts:
+    The idea is to have left and right contexts zones around targets annotated
+    in the document index. We'd record something like
+    <lc>ich gehe morgen</lc> in <rc>das neue Freibad</rc>
+    with, say, a 3-4 token context, then query like
+    "ZONE:lc gehe morgen" << "ZONE:rc das neue".
+*** Stemming/Lemmatizing/Adding POS information
+    A pos-field that just records the occurring POS tags might not be a bad
+    idea. We needn't index it, but having it there would already help.
+* Tasks
+** DONE Fix encoding bug
+   - [x] Make a test case
+   - [x] Check that the mysql encoding works
+   - [x] Check that sphinx doesn't muck it up
+   - [x] Does the sphinx-haskell package muck it up somewhere?
+   - [x] Find a workaround for the stuff sphinx-haskell does to my poor umlauts
+   - [x] Make a test run
+   - [x] Make sure we get all s40's when training and testing on the same set
+*** Haskell shpnix bindings seem to be non-unicode aware
+    I'm getting "f\195\188r" back in the result. Observe:
+
+       λ> import qualified Data.ByteString.Char8 as BS
+       λ> import Data.Text.Encoding
+       λ> decodeUtf8 $ BS.pack "f\195\188r"
+       "f\252r"
+       λ> putStrLn $ T.unpack $ decodeUtf8 $ BS.pack "f\195\188r"
+       für
+       λ> putStrLn "f\195\188r"
+       fÃ¼r
+
+    How exatly do we fix this? Note that re-encoding the outgoing stuff won't work,
+    since we seem to also fuck up on the incoming stuff (as the low recall
+    rates show.)
+
+    Over the wire, searchd sends back UTF-8, i.e. for ü it sends back c3 bc, or,
+    in decimal, 195 188. haskell-sphinx takes these bytes at face-value and merely
+    encodes them byte-by-byte into ASCII, which results in Ã¼.
+
+    Haskell-shpinx sends to searchd (via `query`) fc, i.e. ü in latin1, not
+    c3bc, which would be ü in utf-8; and what does searchd expect? Likely utf8,
+    seeing as it doesn't seem to understand umlauts.
+
+    Commit fc5c574 fixes this.
+*** TODO Investigate the necessity of 582e604
+   We're using SET NAMES 'utf8' after opening up the connection. This might or
+   might not be useful, but if it isn't, leaving it in is careless.
+** TODO Migrate to a better format (no lcs rcs, but instead a single context one)
+   Currently, we're putting surface lemma and pos into the db, with target tags
+   for targets. What about metadata about positions of targets within the sentence?
+
+   Indexing happens on surface and lemma only.
+
+   - fix output newline after changing corpora
+   - simplify tagging routine.
+** TODO Don't count stuff server side, but client side, so we can do advanced stuff
+** Ideas
+   - Tag sfc forms with prepositions to distinguish canNN and canV and similar
+   homophonic but different-part-of-speech words in English.
+   - Don't count stuff server-side in searchd, but get the docids, the retrieve
+   documents and count everything in pfeg itself, so we can also do advanced
+   matches that searchd doesn't support.
+   - Only allow certain kinds of words (pos) to be inserted with the proximity
+   operator ~n (like adjectives, adverbs, etc, pre/circum-whatever positions.
+   It's rule based, but it might improve performance.)
+   - Implement asymmetric backoff (this needs trivial changes to the pattern
+   data type.)
+   - Find most effective patterns (with R?) and then change how a "correct"
+   match is found to make it prefer effective patterns.
+   - (Optional) Train logistic regression or SVM to give a confidence measure.
+   - Implement some sort of frequency measure for words in matches, tf or so.
