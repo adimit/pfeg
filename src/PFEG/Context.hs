@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module PFEG.Context
     ( -- * Types
       Context(..)
@@ -8,21 +8,47 @@ module PFEG.Context
     , getItems
     , getMaskedItems
     , getMaskedItems'
+    , tagSentence
     ) where
 
+import PFEG
+import PFEG.Configuration
 import PFEG.Types
 
-import Control.Monad (liftM2)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 
-import Data.List (findIndices)
+import Data.List (findIndices,mapAccumL)
 
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
 
+import Control.Monad.Reader
 import Codec.Digest.SHA.Monad
+
+o_targetTag, c_targetTag :: Token Text
+o_targetTag = nonWord "<t>"
+c_targetTag = nonWord "</t>"
+
+-- | Insert tags around items in a list at given indices. Indices are 0-based
+-- and *must* be sorted.
+insertTags :: [a] -- ^ The list to insert tags into
+             -> (a,a) -- ^ The open (fst) and close (snd) tags
+             -> [Int] -- ^ *Sorted* list of 0-based indices at which to insert tags.
+             -> [a]
+-- maybe this should've been implemented with iterate instead?
+insertTags s (open,close) idx =
+    concat . snd $ mapAccumL f idx (zip s [0..])
+    where f []            (stoken,_)                    = ([], [stoken])
+          f idx'@(i:idxs) (stoken,sindex) | i == sindex = (idxs, [open,stoken,close])
+                                          | otherwise   = (idx', [stoken])
+
+tagSentence :: Sentence Text -> PFEG st (Sentence Text)
+tagSentence s = do
+    ts <- liftM targets ask
+    let target_indices = findIndices ((`elem` ts).surface) s
+    return $ insertTags s (o_targetTag, c_targetTag) target_indices
 
 data Context a = Context { left  :: ![a]
                          , right :: ![a]

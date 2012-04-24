@@ -70,11 +70,11 @@ process :: PFEGConfig -> IO ()
 process session =
     case pfegMode session of
         Record{ corpora = cs } -> do
-          s <- prepare (database session) upsertRecord
+          s <- prepare (database session) insertSentence
           mvar <- newEmptyMVar
           cmd <- newMVar ()
           void $ forkIO . forever $ recorder s mvar cmd
-          let it = standardIteratee (getItems $ targets session) (recordF mvar)
+          let it = sentenceIteratee (recordF mvar)
           void $ workOnCorpora it session (0,[]) cs
           putStrLn "Waiting for DB…" >> takeMVar cmd
         Match{ corpora = cs, resultLog = l } -> do
@@ -317,16 +317,23 @@ recorder s mvar cmd = do
 
 type RecordData = [[SqlValue]]
 
-recordF :: MVar RecordData -> ItemProcessor (Int, RecordData)
-recordF mvar item = do
+recordF :: MVar RecordData -> SentenceProcessor (Int, RecordData)
+recordF mvar s = do
     (i,vals) <- get
-    let vals' = item2SQL item:vals
+    tagged_s <- tagSentence s
+    let vals' = sentence2SQL tagged_s:vals
     if i == 10000
        then put (0,[]) >> liftIO (putMVar mvar vals')
        else put (i+1,vals')
 
 standardIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
 standardIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
+
+sentenceIteratee :: SentenceProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
+sentenceIteratee = I.mapChunksM_
+
+type SentenceProcessor st = Sentence Text -> PFEG st ()
+type SentenceProcessor_   = SentenceProcessor ()
 
 type ItemProcessor st = Item Text -> PFEG st ()
 type ItemProcessor_ = ItemProcessor ()
