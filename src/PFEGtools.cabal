@@ -8,11 +8,28 @@ Category:      NLP
 Build-type:    Simple
 
 Executable pfeg
-    Build-Depends: HDBC, base, text, mtl, ReadArgs,
-                   hsini, iteratee, split, hashable, containers, SHA2, bytestring,
-                   time, text, attoparsec, binary, convertible,
-                   attoparsec-iteratee, transformers, safe, unordered-containers,
-                   MonadCatchIO-transformers
+    Build-Depends:   HDBC
+                   , base
+                   , text
+                   , mtl
+                   , ReadArgs
+                   , hsini
+                   , iteratee
+                   , split
+                   , hashable
+                   , containers
+                   , SHA2
+                   , bytestring
+                   , time
+                   , text
+                   , attoparsec
+                   , binary
+                   , convertible
+                   , attoparsec-iteratee
+                   , transformers
+                   , safe
+                   , unordered-containers
+                   , MonadCatchIO-transformers
                    , vty >= 4.7.0.10
                    , MissingH >= 1.1.1.0
                    , HDBC-mysql
