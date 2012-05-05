@@ -295,12 +295,13 @@ patterns :: [SphinxPattern]
 patterns = [ Surface x y | x <- [4,3,2,1], y <- [0,1,2] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [0,1,2] ]
 
 workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
-workOnCorpora it session st = mapM $ \ c@(_cName,cFile) -> do
+workOnCorpora it session st = mapM $ \ c@(cName,cFile) -> do
     (threadID,logVar) <- evalPFEG (forkLogger c) () session
     let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                  [ countChunksI logVar , I.joinI $ I.convStream corpusI it ])
     res <- execPFEG iteratee st session
     killThread threadID
+    putStrLn $ "Finished " ++ cName
     return res
 
 recorder :: Statement -> MVar RecordData -> MVar () -> IO ()
