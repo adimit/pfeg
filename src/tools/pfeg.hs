@@ -1,13 +1,10 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
-import Data.Text.Encoding (encodeUtf8,decodeUtf8)
-import qualified Data.ByteString.Char8 as BS
 import Data.Time.Clock (NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
-import Data.Binary.Put (Put)
 
 import Data.Maybe (fromMaybe,listToMaybe,catMaybes)
 import qualified Data.ByteString.Lazy.Char8 as B
@@ -233,12 +230,10 @@ data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int 
 
 parseResult :: QueryResult -> Prediction
 parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
-    where utf8ify :: B.ByteString -> Text               -- Work around haskell-shpinx bugged
-          utf8ify = decodeUtf8 . BS.concat . B.toChunks -- treatment of utf8. See todo.org
-          getMatch :: Sphinx.Match -> (Text,Int)
+    where getMatch :: Sphinx.Match -> (Text,Int)
           getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
              case attrs of
-                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (utf8ify t, c)
+                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (t, c)
                   _ -> error $ "Malformed search result: " ++ show attrs
 
 initialMatcherState :: MatcherState
@@ -272,16 +267,15 @@ getLetter Surface {} = 's'
 getLetter Lemma   {} = 'l'
 getLetter MajorityBaseline = 'M'
 
-makeQuery :: Item Text -> SphinxPattern -> String
+makeQuery :: Item Text -> SphinxPattern -> Text
 makeQuery i p =
-    mkC 'l' (unText lc) ++ " " ++ mkC 'r' (unText rc)
+    T.concat [mkC 'l' lc," ", mkC 'r' rc]
     where (lc,rc) = getContext i p
-          mkC side c = '@':side:'c':getLetter p:" \"" ++ c ++ "\"" ++ tol
-          unText :: [Text] -> String                  -- work around borked haskell-sphinx
-          unText = BS.unpack . encodeUtf8 . T.unwords -- unicode handling. See todo.org
+          mkC side c = T.concat [T.pack $ '@':side:'c':[getLetter p],quote . T.unwords $ c,tol]
+          quote x = T.concat [T.singleton '"',x,T.singleton '"']
           tol = case tolerance p of
-                0 -> ""
-                x -> '~':show x
+                0 -> T.empty
+                x -> T.pack $ '~':show x
 
 getContext :: Item a -> SphinxPattern -> ([a],[a])
 getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
@@ -291,12 +285,11 @@ getContext _ MajorityBaseline = ([],[])
 makeContext :: [a] -> [a] -> Int -> ([a],[a])
 makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
 
-makeAQuery :: Item Text -> SphinxPattern -> PFEG a Put
+makeAQuery :: Item Text -> SphinxPattern -> PFEG a Query
 makeAQuery item pattern = do
     let q = makeQuery item pattern
-    conf <- liftM (searchConf.pfegMode) ask
     index <- liftM sphinxIndex ask
-    return $ addQuery conf q index (show pattern)
+    return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
 
 patterns :: [SphinxPattern]
 patterns = [ Surface x y | x <- [4,3,2,1], y <- [0,1,2] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [0,1,2] ]
