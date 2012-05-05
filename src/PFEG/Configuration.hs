@@ -7,7 +7,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
-import Text.Search.Sphinx.Types (Sort(..),GroupByFunction(..),MatchMode(..))
+import Text.Search.Sphinx.Types (MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Control.Concurrent.Chan
 import Data.Ini.Types
@@ -130,10 +130,6 @@ defaultSearchConf :: String -> Int -> S.Configuration
 defaultSearchConf shost sport = S.defaultConfig
      { S.host        = shost
      , S.port        = sport
-     , S.groupByFunc = Attr
-     , S.groupBy     = "target"
-     , S.sort        = AttrDesc
-     , S.sortBy      = "target"
      , S.mode        = Extended }
 
 splitAndStrip :: String -> [Text]
