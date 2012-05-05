@@ -33,16 +33,24 @@ c_targetTag = nonWord "</t>"
 
 -- | Insert tags around items in a list at given indices. Indices are 0-based
 -- and *must* be sorted.
-insertTags :: [a] -- ^ The list to insert tags into
-             -> (a,a) -- ^ The open (fst) and close (snd) tags
+-- CAREFUL: If the tagged @Token@s are anything but @Word@, they will not
+-- retain that property, but they will be turned into @Word@ upon tagging, even
+-- if they use, say @Masked@.
+insertTags :: [Token Text] -- ^ The list to insert tags into
+             -> (Token Text,Token Text) -- ^ The open (fst) and close (snd) tags
              -> [Int] -- ^ *Sorted* list of 0-based indices at which to insert tags.
-             -> [a]
+             -> [Token Text]
 -- maybe this should've been implemented with iterate instead?
 insertTags s (open,close) idx =
-    concat . snd $ mapAccumL f idx (zip s [0..])
-    where f []            (stoken,_)                    = ([], [stoken])
-          f idx'@(i:idxs) (stoken,sindex) | i == sindex = (idxs, [open,stoken,close])
-                                          | otherwise   = (idx', [stoken])
+    snd $ mapAccumL f idx (zip s [0..])
+    where f []            (stoken,_)                    = ([], stoken)
+          f idx'@(i:idxs) (stoken,sindex) | i == sindex = (idxs, merge [open,stoken,close])
+                                          | otherwise   = (idx', stoken)
+          -- CAREFUL: This will squish any kind of Token into a Word
+          merge :: [Token Text] -> Token Text
+          merge t = Word { surface = T.concat . fmap surface $ t
+                         , lemma   = T.concat . fmap lemma   $ t
+                         , pos     = T.concat . fmap pos     $ t }
 
 tagSentence :: Sentence Text -> PFEG st (Sentence Text)
 tagSentence s = do
