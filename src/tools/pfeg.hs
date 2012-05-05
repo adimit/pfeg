@@ -92,9 +92,11 @@ matchF :: QueryChan -> ItemProcessor_
 matchF log item = do
     session <- ask
     queries <- mapM (makeAQuery item) patterns
-    liftIO $ putStrLn "Querying…"
-    (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-    liftIO $ writeChan log (item,results,time)
+    liftIO $ do
+        putStr "Querying…"
+        (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
+        putStr "\r"
+        writeChan log (item,results,time)
 
 type QueryChan = Chan (Item Text, Sphinx.Result [QueryResult],NominalDiffTime)
 
