@@ -74,10 +74,13 @@
    for targets. What about metadata about positions of targets within the sentence?
 
    Indexing happens on surface and lemma only.
-
-   - fix output newline after changing corpora
-   - simplify tagging routine.
 ** TODO Don't count stuff server side, but client side, so we can do advanced stuff
+   When counting stuff ourselves, we should take care to strip or circumvent or
+   otherwise neutralize interference by the tags. I think the best way would be to
+   - T.words the string
+   - Find the position we're looking for not by using equality but contains tests.
+   Probably better would be if sphinx could give us an offset into the sentence
+   about where the match starts or where the target is.
 ** Ideas
    - Tag sfc forms with prepositions to distinguish canNN and canV and similar
    homophonic but different-part-of-speech words in English.
@@ -93,3 +96,4 @@
    match is found to make it prefer effective patterns.
    - (Optional) Train logistic regression or SVM to give a confidence measure.
    - Implement some sort of frequency measure for words in matches, tf or so.
+   - add hashes back into the mix so we don't have duplicate documents?
