@@ -254,12 +254,12 @@ instance Show SphinxPattern where
     show p = getLetter p : show (width p) ++ show (tolerance p)
 
 testItem, testItem' :: Item String
-testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule"]
-                 , itemLemma   = Context ["ich","gehen"] ["d", "schule"]
+testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule", "in", "kazachstan"]
+                 , itemLemma   = Context ["ich","gehen"] ["d", "schule", "in", "kazachstan"]
                  , target = Word "in" "in" "in" }
 
-testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni"]
-                 , itemLemma   = Context ["ich","gehen"] ["d", "uni"]
+testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni", "in", "kazachstan"]
+                 , itemLemma   = Context ["ich","gehen"] ["d", "uni", "in", "kazachstan"]
                  , target = Word "auf" "auf" "auf" }
 
 getLetter :: SphinxPattern -> Char
