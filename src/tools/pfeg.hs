@@ -267,16 +267,6 @@ getLetter Surface {} = 's'
 getLetter Lemma   {} = 'l'
 getLetter MajorityBaseline = 'M'
 
-makeQuery :: Item Text -> SphinxPattern -> Text
-makeQuery i p =
-    T.concat [mkC 'l' lc," ", mkC 'r' rc]
-    where (lc,rc) = getContext i p
-          mkC side c = T.concat [T.pack $ '@':side:'c':[getLetter p],quote . T.unwords $ c,tol]
-          quote x = T.concat [T.singleton '"',x,T.singleton '"']
-          tol = case tolerance p of
-                0 -> T.empty
-                x -> T.pack $ '~':show x
-
 getContext :: Item a -> SphinxPattern -> ([a],[a])
 getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
 getContext Item { itemLemma   = (Context ls rs) } (Lemma {width = w})   = makeContext ls rs w
@@ -287,9 +277,29 @@ makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
 
 makeAQuery :: Item Text -> SphinxPattern -> PFEG a Query
 makeAQuery item pattern = do
-    let q = makeQuery item pattern
+    let mkQ :: Item Text -> SphinxPattern -> PFEG a Text
+        mkQ Item { itemSurface = c } p@Surface { } = makeQuery' c "@surface" p
+        mkQ Item { itemLemma   = c } p@Lemma   { } = makeQuery' c "@lemma"   p
+        mkQ _ x = error $ "Pattern type "++ show x ++" not suited for query construction."
+    q <- mkQ item pattern
     index <- liftM sphinxIndex ask
     return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
+
+makeQuery' :: Context Text -> Text -> SphinxPattern -> PFEG a Text
+makeQuery' c level p = do
+    ts <- liftM targets ask
+    let w = width p
+        leftContext  = reverse . take w . reverse . left $ c
+        rightContext = take w . right $ c
+        prox x       = tolerance p + 2 * length (filter (`elem` ts) x)
+    -- TODO: Replace << with NEAR, though watch out for the silly tag-counts-as-position bug.
+    return $ T.intercalate " " [level, mkC prox leftContext, "<<", mkC prox rightContext]
+    where mkC prox x = T.concat 
+              [ wrap '"' . T.unwords $ x
+              , let p' = prox x in if p' <= 1 then T.empty else T.pack $ '~':show p' ]
+
+wrap :: Char -> Text -> Text
+wrap c x = T.cons c $ T.concat [x, T.singleton c]
 
 patterns :: [SphinxPattern]
 patterns = [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
