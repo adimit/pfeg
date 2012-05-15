@@ -292,7 +292,7 @@ makeAQuery item pattern = do
     return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
 
 patterns :: [SphinxPattern]
-patterns = [ Surface x y | x <- [4,3,2,1], y <- [0,1,2] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [0,1,2] ]
+patterns = [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
 
 workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
 workOnCorpora it session st = mapM $ \ c@(cName,cFile) -> do
