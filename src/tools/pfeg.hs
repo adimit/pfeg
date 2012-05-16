@@ -79,12 +79,12 @@ process session =
           putStrLn "Waiting for DB…" >> takeMVar cmd
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (matchLogger l chan) initialMatchScore session)
+          void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialMatchScore session)
           let it = standardIteratee (getItems $ targets session) (matchF chan)
           void $ workOnCorpora it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (matchLogger l chan) initialPredictScore session)
+          void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
           let it = standardIteratee (getMaskedItems' $ targets session) (matchF chan)
           void $ workOnCorpora it session () cs
 
@@ -168,7 +168,6 @@ matchLogger l c = do
                          "\nT: " ++ renderS time ++
                          "\nS: " ++ show newScore ++
                          "\nX: " ++ show winningPattern
-    matchLogger l c
 
 type DocId = Int
 
