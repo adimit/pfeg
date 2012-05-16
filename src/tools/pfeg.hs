@@ -330,8 +330,7 @@ type RecordData = [[SqlValue]]
 recordF :: MVar RecordData -> SentenceProcessor (Int, RecordData)
 recordF mvar s = do
     (i,vals) <- get
-    tagged_s <- tagSentence s
-    let vals' = sentence2SQL tagged_s:vals
+    let vals' = sentence2SQL s:vals
     if i == 10000
        then put (0,[]) >> liftIO (putMVar mvar vals')
        else put (i+1,vals')
