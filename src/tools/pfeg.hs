@@ -7,7 +7,8 @@ import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
 
 import Data.Maybe (fromMaybe,listToMaybe,catMaybes)
-import qualified Data.ByteString.Lazy.Char8 as B
+import qualified Data.ByteString.Lazy as LB
+import qualified Data.ByteString as SB
 import PFEG
 import PFEG.Types
 import PFEG.SQL
@@ -28,6 +29,7 @@ import System.IO
 
 import qualified Data.Text as T
 import Data.Text (Text)
+import Data.Text.Encoding (decodeUtf8)
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
@@ -136,20 +138,22 @@ findBestPrediction ps = do
     where f Nothing _ = Nothing
           f (Just (x,_))  p = Just (x,p)
 
-getQueryResults :: Sphinx.Result [QueryResult] -> IO [QueryResult]
+bs :: LB.ByteString -> Text
+bs = decodeUtf8 . SB.concat . LB.toChunks
+
+getQueryResults :: Sphinx.Result [QueryResult] -> ([QueryResult],Maybe Text)
 getQueryResults result =
     case result of
-         (Sphinx.Warning warn a) -> putStrLn ("WARNING: " ++ B.unpack warn) >> return a
-         (Sphinx.Ok a)           -> return a
-         (Sphinx.Error code msg) -> putStrLn ("ERROR ("++ show code++"): " ++ B.unpack msg)
-                                    >> return []
-         (Sphinx.Retry msg)      -> putStrLn ("RETRY: " ++ B.unpack msg) >> return []
+         (Sphinx.Warning warn a) -> (a, Just $ T.concat ["WARNING: ", bs warn])
+         (Sphinx.Ok a)           -> (a, Nothing)
+         (Sphinx.Error code msg) -> ([], Just $ T.concat["ERROR (",T.pack . show $ code,"): ", bs msg])
+         (Sphinx.Retry msg)      -> ([], Just $ T.concat["RETRY: ", bs msg])
 
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     tickScore
     (item,result,time) <- liftIO $ readChan c
-    results <- liftIO $ getQueryResults result
+    let (results, msg) = getQueryResults result
     currentScore <- get
     let preds = zip (map parseResult results) patterns
     (newScore,winningPattern,bestPrediction) <- score currentScore (target item) (map fst preds)
