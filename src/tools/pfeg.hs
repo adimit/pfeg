@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
+import qualified Data.HashMap.Strict as M
 import Data.Time.Clock (NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
@@ -154,11 +155,13 @@ matchLogger l c = do
     tickScore
     (item,result,time) <- liftIO $ readChan c
     let (results, msg) = getQueryResults result
+        docids = map parseResult results
+    liftIO $ maybe (return ()) (putStrLn . T.unpack) msg
+    targetPredictions <- mapM matchTargets docids
     currentScore <- get
-    let preds = zip (map parseResult results) patterns
-    (newScore,winningPattern,bestPrediction) <- score currentScore (target item) (map fst preds)
+    (newScore,winningPattern,bestPrediction) <- score currentScore (target item) targetPredictions
     put $! newScore
-    ls <- mapM (uncurry $ logDataLine item time) preds
+    ls <- mapM (uncurry $ logDataLine item time) (zip targetPredictions patterns)
     liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
                 putStrLn $ "P: " ++ T.unpack bestPrediction ++
                          "\nA: " ++ show (target item) ++
@@ -166,6 +169,16 @@ matchLogger l c = do
                          "\nS: " ++ show newScore ++
                          "\nX: " ++ show winningPattern
     matchLogger l c
+
+type DocId = Int
+
+matchTargets :: [DocId] -> PFEG a Prediction
+matchTargets docids = do
+    p <- liftM catMaybes $ mapM getPrediction docids
+    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1::[Int])
+
+getPrediction :: DocId -> PFEG a (Maybe Text)
+getPrediction = undefined -- query database to find out prediction
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
@@ -232,13 +245,14 @@ instance Show Score where
 type Prediction = [(Text,Int)]
 data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int }
 
-parseResult :: QueryResult -> Prediction
-parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
-    where getMatch :: Sphinx.Match -> (Text,Int)
-          getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
-             case attrs of
-                  (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (t, c)
-                  _ -> error $ "Malformed search result: " ++ show attrs
+parseResult :: QueryResult -> [DocId]
+parseResult = undefined
+-- parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
+--     where getMatch :: Sphinx.Match -> (Text,Int)
+--           getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
+--              case attrs of
+--                   (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (t, c)
+--                   _ -> error $ "Malformed search result: " ++ show attrs
 
 initialMatcherState :: MatcherState
 initialMatcherState = MatcherState 0 0
