@@ -157,7 +157,7 @@ matchLogger l c = do
     let (results, msg) = getQueryResults result
         docids = map parseResult results
     liftIO $ maybe (return ()) (putStrLn . T.unpack) msg
-    targetPredictions <- mapM matchTargets docids
+    targetPredictions <- mapM (matchTargets item) docids
     currentScore <- get
     (newScore,winningPattern,bestPrediction) <- score currentScore (target item) targetPredictions
     put $! newScore
@@ -171,13 +171,13 @@ matchLogger l c = do
 
 type DocId = Int
 
-matchTargets :: [DocId] -> PFEG a Prediction
-matchTargets docids = do
-    p <- liftM catMaybes $ mapM getPrediction docids
+matchTargets :: Item Text -> [DocId] -> PFEG a Prediction
+matchTargets i docids = do
+    p <- liftM catMaybes $ mapM (getPrediction i) docids
     return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1)
 
-getPrediction :: DocId -> PFEG a (Maybe Text)
-getPrediction = undefined -- query database to find out prediction
+getPrediction :: Item Text -> DocId -> PFEG a (Maybe Text)
+getPrediction i docid = undefined -- query database to find out prediction
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
