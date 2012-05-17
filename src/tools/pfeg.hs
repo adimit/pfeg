@@ -174,7 +174,7 @@ type DocId = Int
 matchTargets :: [DocId] -> PFEG a Prediction
 matchTargets docids = do
     p <- liftM catMaybes $ mapM getPrediction docids
-    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1::[Int])
+    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1)
 
 getPrediction :: DocId -> PFEG a (Maybe Text)
 getPrediction = undefined -- query database to find out prediction
