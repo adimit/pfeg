@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings, GeneralizedNewtypeDeriving #-}
 module PFEG.Configuration
     ( ConfigError
     , Corpus
@@ -7,6 +7,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import Data.Text.ICU
 import Text.Search.Sphinx.Types (MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Control.Concurrent.Chan
@@ -20,6 +21,7 @@ import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
 import Control.Monad.Error
 import Data.List.Split (splitOn)
+import qualified Text.Search.Sphinx.ExcerptConfiguration as Ex
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -48,13 +50,20 @@ data PFEGConfig = PFEGConfig
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , searchConf:: S.Configuration
+                         , exConf    :: Ex.ExcerptConfiguration
+                         , mRegex    :: Regex
                          , resultLog :: Handle }
                 | Predict { corpora  :: [Corpus]
                           , searchConf:: S.Configuration
+                          , exConf    :: Ex.ExcerptConfiguration
+                          , mRegex    :: Regex
                           , resultLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
+
+excerptRegexString :: Text
+excerptRegexString = "\\} ([^{}]*) \\{"
 
 data RunMode = RunRecord | RunMatch | RunPredict
 detectMode :: String -> Configurator RunMode
@@ -106,6 +115,8 @@ initialize modeString cfg = do
             test  <- getCorpusSet cfg "tasks" "match"
             resL  <- openHandle AppendMode cfg "main" "resultLog"
             return Match { corpora    = test
+                         , exConf     = defaultExcerptConf shost sport
+                         , mRegex     = regex [] excerptRegexString
                          , searchConf = defaultSearchConf shost sport
                          , resultLog  = resL }
       RunRecord -> do
@@ -115,6 +126,8 @@ initialize modeString cfg = do
             predict <- getCorpusSet cfg "tasks" "predict"
             resL <- openHandle AppendMode cfg "main" "predictLog"
             return Predict { corpora    = predict
+                           , mRegex     = regex [] excerptRegexString
+                           , exConf     = defaultExcerptConf shost sport
                            , searchConf = defaultSearchConf shost sport
                            , resultLog  = resL }
     liftIO $ putStrLn "Done."
@@ -125,6 +138,13 @@ initialize modeString cfg = do
                       , targets    = targs
                       , majorityBaseline = majB
                       , chunkSize  = csize }
+
+defaultExcerptConf :: String -> Int -> Ex.ExcerptConfiguration
+defaultExcerptConf shost sport = Ex.altConfig
+    { Ex.host        = shost
+    , Ex.port        = sport
+    , Ex.beforeMatch = "{"
+    , Ex.afterMatch  = "}" }
 
 defaultSearchConf :: String -> Int -> S.Configuration
 defaultSearchConf shost sport = S.defaultConfig
