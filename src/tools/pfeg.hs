@@ -95,10 +95,17 @@ matchF log item = do
     liftIO $ do
         putStr "Querying…"
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
+        writeChan log $ QueryData (map queryString queries) item results time
         putStr "\r"
-        writeChan log (item,results,time)
 
-type QueryChan = Chan (Item Text, Sphinx.Result [QueryResult],NominalDiffTime)
+type QueryChan = Chan QueryData
+
+data QueryData = QueryData
+    { qStrings :: ![Text]
+    , qItem    :: !(Item Text)
+    , qResults :: !(Sphinx.Result [QueryResult])
+    , qTime    :: !NominalDiffTime }
+    deriving (Show)
 
 initialPredictScore, initialMatchScore :: Score
 initialPredictScore = PredictScore 0 0 0 0 0 0 0 0 0 0
@@ -153,11 +160,11 @@ getQueryResults result =
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     tickScore
-    (item,result,time) <- liftIO $ readChan c
+    qd@(QueryData queries item result time) <- liftIO $ readChan c
     let (results, msg) = getQueryResults result
         docids = map parseResult results
     liftIO $ maybe (return ()) (putStrLn . T.unpack) msg
-    targetPredictions <- mapM (matchTargets item) docids
+    targetPredictions <- mapM (matchTargets qd) docids
     currentScore <- get
     (newScore,winningPattern,bestPrediction) <- score currentScore (target item) targetPredictions
     put $! newScore
@@ -171,13 +178,13 @@ matchLogger l c = do
 
 type DocId = Int
 
-matchTargets :: Item Text -> [DocId] -> PFEG a Prediction
-matchTargets i docids = do
-    p <- liftM catMaybes $ mapM (getPrediction i) docids
+matchTargets :: QueryData -> [DocId] -> PFEG a Prediction
+matchTargets qd docids = do
+    p <- liftM catMaybes $ mapM (getPrediction qd) docids
     return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1)
 
-getPrediction :: Item Text -> DocId -> PFEG a (Maybe Text)
-getPrediction i docid = undefined -- query database to find out prediction
+getPrediction :: QueryData -> DocId -> PFEG a (Maybe Text)
+getPrediction qd docid = undefined -- query database to find out prediction
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
