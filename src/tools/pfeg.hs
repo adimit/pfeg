@@ -8,7 +8,7 @@ import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
 import Data.Text.ICU hiding (compare,pattern)
 
-import Data.Maybe (fromMaybe,listToMaybe,catMaybes)
+import Data.Maybe (mapMaybe,fromMaybe,listToMaybe,catMaybes)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
 import PFEG
