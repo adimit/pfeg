@@ -289,13 +289,7 @@ type Prediction = [(Text,Int)]
 data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int }
 
 parseResult :: QueryResult -> [DocId]
-parseResult = undefined
--- parseResult (QueryResult { matches = ms }) = sortBy (flip compare `on` snd) $ map getMatch ms
---     where getMatch :: Sphinx.Match -> (Text,Int)
---           getMatch Sphinx.Match { Sphinx.attributeValues = attrs } =
---              case attrs of
---                   (Sphinx.AttrString t:_:Sphinx.AttrUInt c:[]) -> (t, c)
---                   _ -> error $ "Malformed search result: " ++ show attrs
+parseResult QueryResult { matches = ms } = map (fromIntegral . Sphinx.documentId) ms
 
 initialMatcherState :: MatcherState
 initialMatcherState = MatcherState 0 0
