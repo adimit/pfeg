@@ -46,6 +46,7 @@ import Database.HDBC.MySQL
 
 import Graphics.Vty.Terminal
 
+import Text.Groom
 import PFEG.Configuration
 import qualified ReadArgs as RA
 import qualified Data.HashSet as Set
@@ -58,7 +59,7 @@ main = do
                   terminal_handle >>= hide_cursor
                   configAttempt <- configurePFEG mode configFile
                   case configAttempt of
-                       (Left err) -> error $ "Initialization failed: "++ show err
+                       (Left err) -> error $ "Initialization failed: "++ groom err
                        (Right config) -> return config)
               (\session -> do
                   putStrLn "Shutting down…"
@@ -220,7 +221,7 @@ queryDB ids = do
     sql <- liftIO $ quickQuery' db ("SELECT surface,lemma FROM records WHERE id in " ++ arg) []
     return . M.fromList $ zip uniqueIds (map fsql sql)
     where fsql (s:l:[]) = (fromSql s, fromSql l)
-          fsql x        = error $ "SQL reply not in the right format:\n" ++ show x
+          fsql x        = error $ "SQL reply not in the right format:\n" ++ groom x
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
