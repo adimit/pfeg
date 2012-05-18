@@ -6,6 +6,7 @@ import Data.Time.Clock (NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
+import Data.Text.ICU hiding (compare,pattern)
 
 import Data.Maybe (fromMaybe,listToMaybe,catMaybes)
 import qualified Data.ByteString.Lazy as LB
@@ -47,6 +48,7 @@ import Graphics.Vty.Terminal
 
 import PFEG.Configuration
 import qualified ReadArgs as RA
+import qualified Data.HashSet as Set
 
 main :: IO ()
 main = do
@@ -157,14 +159,19 @@ getQueryResults result =
          (Sphinx.Error code msg) -> ([], Just $ T.concat["ERROR (",T.pack . show $ code,"): ", bs msg])
          (Sphinx.Retry msg)      -> ([], Just $ T.concat["RETRY: ", bs msg])
 
+type DocId = Int
+type DocMap = M.HashMap DocId (Text,Text)
+
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     tickScore
-    qd@(QueryData queries item result time) <- liftIO $ readChan c
+    (QueryData queries item result time) <- liftIO $ readChan c
     let (results, msg) = getQueryResults result
         docids = map parseResult results
     liftIO $ maybe (return ()) (putStrLn . T.unpack) msg
-    targetPredictions <- mapM (matchTargets qd) docids
+    docMap <- queryDB $ concat docids
+    let doqData = zip queries (map (map $ lookupDoc docMap) docids)
+    targetPredictions <- mapM matchTargets doqData
     currentScore <- get
     (newScore,winningPattern,bestPrediction) <- score currentScore (target item) targetPredictions
     put $! newScore
@@ -176,15 +183,44 @@ matchLogger l c = do
                          "\nS: " ++ show newScore ++
                          "\nX: " ++ show winningPattern
 
-type DocId = Int
+lookupDoc :: DocMap -> DocId -> (Text,Text)
+lookupDoc = flip (M.lookupDefault (T.empty,T.empty))
 
-matchTargets :: QueryData -> [DocId] -> PFEG a Prediction
-matchTargets qd docids = do
-    p <- liftM catMaybes $ mapM (getPrediction qd) docids
-    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip p (repeat 1)
+matchTargets :: (Text,[(Text,Text)]) -> PFEG a Prediction
+matchTargets (q,res) = do
+    session <-  ask
+    let res' = chooseSide q res
+    reply <- liftIO $ buildExcerpts (exConf . pfegMode $ session) res' (sphinxIndex session) q
+    let excerpts = case reply of
+                        Sphinx.Ok a -> a
+                        _           -> []
+    p <- mapM getPrediction excerpts
+    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip (concat p) (repeat 1)
 
-getPrediction :: QueryData -> DocId -> PFEG a (Maybe Text)
-getPrediction qd docid = undefined -- query database to find out prediction
+
+-- TODO: generalize to not only just find the first match in a sentence
+-- It IS unlikely that a given query will match twice and with different
+-- results, but not impossible.
+getPrediction :: Text -> PFEG a [Text]
+getPrediction exc = do
+    rex <- liftM (mRegex . pfegMode) ask
+    return . mapMaybe (group 1) . findAll rex $ exc
+
+chooseSide :: Text          -- ^ The query string
+             -> [(Text,Text)] -- ^ Documents with surface and lemma
+             -> [Text]        -- ^ Either surface or lemma, depending on the query
+chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
+               | otherwise                 = map fst d
+
+queryDB :: [DocId] -> PFEG a (M.HashMap DocId (Text,Text))
+queryDB ids = do
+    let uniqueIds = Set.toList . Set.fromList $ ids
+        arg = (++")") . ('(':) . intercalate "," . map show $ uniqueIds
+    db <- liftM database ask
+    sql <- liftIO $ quickQuery' db ("SELECT surface,lemma FROM records WHERE id in " ++ arg) []
+    return . M.fromList $ zip uniqueIds (map fsql sql)
+    where fsql (s:l:[]) = (fromSql s, fromSql l)
+          fsql x        = error $ "SQL reply not in the right format:\n" ++ show x
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
