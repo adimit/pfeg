@@ -199,9 +199,6 @@ matchTargets (q,res) = do
     return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip (concat p) (repeat 1)
 
 
--- TODO: generalize to not only just find the first match in a sentence
--- It IS unlikely that a given query will match twice and with different
--- results, but not impossible.
 getPrediction :: Text -> PFEG a [Text]
 getPrediction exc = do
     rex <- liftM (mRegex . pfegMode) ask
