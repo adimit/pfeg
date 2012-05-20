@@ -6,7 +6,9 @@ import Data.Time.Clock (NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
+import Text.Search.Sphinx.ExcerptConfiguration (ExcerptConfiguration)
 import Data.Text.ICU hiding (compare,pattern)
+import Data.Hashable (Hashable)
 
 import Data.Maybe (mapMaybe,fromMaybe,listToMaybe,catMaybes)
 import qualified Data.ByteString.Lazy as LB
@@ -152,7 +154,7 @@ findBestPrediction ps = do
 bs :: LB.ByteString -> Text
 bs = decodeUtf8 . SB.concat . LB.toChunks
 
-getQueryResults :: Sphinx.Result [QueryResult] -> ([QueryResult],Maybe Text)
+getQueryResults :: Sphinx.Result [a] -> ([a],Maybe Text)
 getQueryResults result =
     case result of
          (Sphinx.Warning warn a) -> (a, Just $ T.concat ["WARNING: ", bs warn])
@@ -165,18 +167,23 @@ type DocMap = M.HashMap DocId (Text,Text)
 
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
+    session <- ask
+    (item,time,prediction) <- liftIO $ do
+        (QueryData queries item response time) <- readChan c
+        let (results, msg) = getQueryResults response
+            docids = map parseResult results
+        docMap <- queryDB (database session) . concat $ unique docids
+        let docs = zipWith chooseSide queries (map (map $ lookupDoc docMap) docids)
+        (excerpts,msgs) <- liftM unzip $
+            zipWithM (getEx (exConf . pfegMode $ session) (sphinxIndex session)) docs queries
+        mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
+        let prediction = map (count . concatMap (getPrediction (mRegex . pfegMode $ session))) excerpts
+        return (item,time,prediction)
     tickScore
-    (QueryData queries item result time) <- liftIO $ readChan c
-    let (results, msg) = getQueryResults result
-        docids = map parseResult results
-    liftIO $ maybe (return ()) (putStrLn . T.unpack) msg
-    docMap <- queryDB $ concat docids
-    let doqData = zip queries (map (map $ lookupDoc docMap) docids)
-    targetPredictions <- mapM matchTargets doqData
     currentScore <- get
-    (newScore,winningPattern,bestPrediction) <- score currentScore (target item) targetPredictions
+    (newScore,winningPattern,bestPrediction) <- score currentScore (target item) prediction
     put $! newScore
-    ls <- mapM (uncurry $ logDataLine item time) (zip targetPredictions patterns)
+    ls <- mapM (uncurry $ logDataLine item time) (zip prediction patterns)
     liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
                 putStrLn $ "P: " ++ T.unpack bestPrediction ++
                          "\nA: " ++ show (target item) ++
@@ -184,25 +191,24 @@ matchLogger l c = do
                          "\nS: " ++ show newScore ++
                          "\nX: " ++ show winningPattern
 
+-- | Remove duplicates from a list
+unique :: (Hashable a, Eq a) => [a] -> [a]
+unique = Set.toList . Set.fromList
+
+getEx :: ExcerptConfiguration -> String -> [Text] -> Text -> IO ([Text], Maybe Text)
+getEx exConf index docs qry = liftM getQueryResults $ buildExcerpts exConf docs index qry
+
+-- | Count elements in a list
+count :: (Hashable a, Eq a, Num b, Ord b) => [a] -> [(a,b)]
+count x = sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip x (repeat 1)
+
+-- | Find document text by DocId in a DocMap
 lookupDoc :: DocMap -> DocId -> (Text,Text)
 lookupDoc = flip (M.lookupDefault (T.empty,T.empty))
 
-matchTargets :: (Text,[(Text,Text)]) -> PFEG a Prediction
-matchTargets (q,res) = do
-    session <-  ask
-    let res' = chooseSide q res
-    reply <- liftIO $ buildExcerpts (exConf . pfegMode $ session) res' (sphinxIndex session) q
-    let excerpts = case reply of
-                        Sphinx.Ok a -> a
-                        _           -> []
-    p <- mapM getPrediction excerpts
-    return $ sortBy (compare `on` snd) . M.toList . M.fromListWith (+) $ zip (concat p) (repeat 1)
-
-
-getPrediction :: Text -> PFEG a [Text]
-getPrediction exc = do
-    rex <- liftM (mRegex . pfegMode) ask
-    return . mapMaybe (group 1) . findAll rex $ exc
+-- | Retrieve all matches of group 1 of the regex in the string.
+getPrediction :: Regex -> Text -> [Text]
+getPrediction rex exc = mapMaybe (group 1) . findAll rex $ exc
 
 chooseSide :: Text          -- ^ The query string
              -> [(Text,Text)] -- ^ Documents with surface and lemma
@@ -210,13 +216,11 @@ chooseSide :: Text          -- ^ The query string
 chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
                | otherwise                 = map fst d
 
-queryDB :: [DocId] -> PFEG a (M.HashMap DocId (Text,Text))
-queryDB ids = do
-    let uniqueIds = Set.toList . Set.fromList $ ids
-        arg = (++")") . ('(':) . intercalate "," . map show $ uniqueIds
-    db <- liftM database ask
-    sql <- liftIO $ quickQuery' db ("SELECT surface,lemma FROM records WHERE id in " ++ arg) []
-    return . M.fromList $ zip uniqueIds (map fsql sql)
+queryDB :: Connection -> [DocId] -> IO (M.HashMap DocId (Text,Text))
+queryDB conn ids = do
+    let arg = (++")") . ('(':) . intercalate "," . map show $ ids
+    sql <- liftIO $ quickQuery' conn ("SELECT surface,lemma FROM records WHERE id in " ++ arg) []
+    return . M.fromList $ zip ids (map fsql sql)
     where fsql (s:l:[]) = (fromSql s, fromSql l)
           fsql x        = error $ "SQL reply not in the right format:\n" ++ groom x
 
