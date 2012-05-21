@@ -119,13 +119,16 @@ initialMatchScore = MatchScore 0 0
 tickScore :: (MonadState Score m) => m ()
 tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
 
-score :: Score -> Token Text -> [Prediction] -> PFEG a (Score,SphinxPattern,Text)
-score s Masked { original = orig, surface = sfc, alternatives = alts } ps = do
-    (bestPrediction,pattern) <- findBestPrediction ps
-    return (whichCase s bestPrediction sfc orig alts,pattern,bestPrediction)
-score s Word { surface = sfc } ps = do
-    (bestPrediction,pattern) <- findBestPrediction ps
-    return (whichCase s bestPrediction sfc T.empty [],pattern,bestPrediction)
+score :: Token Text -> [Prediction] -> PFEG Score (SphinxPattern,Text)
+score t ps = do
+    tickScore
+    currentScore <- get
+    (bestPrediction,pattern) <- findBestPrediction ps 
+    put $! case t of
+                Masked { original = orig, surface = sfc, alternatives = alts } ->
+                                          whichCase currentScore bestPrediction sfc orig alts
+                Word { surface = sfc } -> whichCase currentScore bestPrediction sfc T.empty []
+    return (pattern,bestPrediction)
 
 whichCase :: Score -> Text -> Text -> Text -> [Text] -> Score
 whichCase s@MatchScore { } p gold _orig alts
@@ -179,11 +182,9 @@ matchLogger l c = do
         mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
         let prediction = map (count . concatMap (getPrediction (mRegex . pfegMode $ session))) excerpts
         return (item,time,prediction)
-    tickScore
-    currentScore <- get
-    (newScore,winningPattern,bestPrediction) <- score currentScore (target item) prediction
-    put $! newScore
-    ls <- mapM (uncurry $ logDataLine item time) (zip prediction patterns)
+    (winningPattern,bestPrediction) <- score (target item) prediction
+    newScore <- get
+    let ls = zipWith (logDataLine item (totalScored newScore) time) prediction patterns
     liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
                 putStrLn $ "P: " ++ T.unpack bestPrediction ++
                          "\nA: " ++ show (target item) ++
@@ -245,18 +246,16 @@ canonicalPredictScore = [ scoreAAA
                         , scoreAABContained
                         , scoreABBContained ]
 
-logDataLine :: Item Text -> NominalDiffTime -> Prediction -> SphinxPattern -> PFEG Score String
+logDataLine :: Item Text -> Int -> NominalDiffTime -> Prediction -> SphinxPattern -> String
 logDataLine Item { itemLemma = Context lcl rcl
                  , itemSurface = Context lcs rcs
-                 , target = w } time ps p = do
-    x <- liftM totalScored get
-    return $ intercalate "\t" $
-        [ show x                        -- item number
-        , T.unpack . surface $ w        -- actually there
-        , show p ]                      -- pattern
-        ++ predictions ps               -- our predictions
-        ++ map untext [lcl,rcl,lcs,rcs] -- the item
-        ++ [ renderS time ]             -- the time the query took
+                 , target = w } x time ps p =
+    intercalate "\t" $ [ show x                        -- item number
+                       , T.unpack . surface $ w        -- actually there
+                       , show p ]                      -- pattern
+                       ++ predictions ps               -- our predictions
+                       ++ map untext [lcl,rcl,lcs,rcs] -- the item
+                       ++ [ renderS time ]             -- the time the query took
 
 -- first three predictions
 predictions :: Prediction -> [String]
