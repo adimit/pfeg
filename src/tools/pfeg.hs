@@ -211,12 +211,16 @@ lookupDoc = flip (M.lookupDefault (T.empty,T.empty))
 getPrediction :: Regex -> Text -> [Text]
 getPrediction rex exc = mapMaybe (group 1) . findAll rex $ exc
 
+-- | Select either surface or lemma depending on the query string.
+--   Expects the documents to be of form (surface,lemma), and will choose
+--   surface by default.
 chooseSide :: Text          -- ^ The query string
              -> [(Text,Text)] -- ^ Documents with surface and lemma
              -> [Text]        -- ^ Either surface or lemma, depending on the query
 chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
                | otherwise                 = map fst d
 
+-- | Get surface and lemma of documents from the DB in batch.
 queryDB :: Connection -> [DocId] -> IO (M.HashMap DocId (Text,Text))
 queryDB conn ids = do
     let arg = (++")") . ('(':) . intercalate "," . map show $ ids
