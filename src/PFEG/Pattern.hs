@@ -3,6 +3,9 @@ module PFEG.Pattern where
 import Text.Parsec.Text
 import Data.Text.ICU (Regex)
 import Data.Text (Text)
+import Text.Parsec.Char
+import Text.Parsec.Prim
+import Text.Parsec.Combinator
 
 data MatchPattern = MatchPattern { left  :: Match
                                  , right :: Match
@@ -22,8 +25,21 @@ instance Show Match where
 instance Show MatchPattern where
     show mp = show (left mp) ++ '-':show (centerInterference mp) ++ '-':show (right mp)
 
+parseLevel :: Parser Level
+parseLevel = (char 'l' >> return Lemma) <|> (char 's' >> return Surface)
+
+parseMatch :: Parser Match
+parseMatch = do
+    lvls <- many1 parseLevel
+    tol  <- many1 digit
+    return Match { form = lvls, tolerance = read tol }
+
 parsePattern :: Parser MatchPattern
-parsePattern = undefined
+parsePattern = do
+    l <- parseMatch
+    inter <- char '-' >> many1 digit
+    r     <- char '-' >> parseMatch
+    return MatchPattern { left = l, right = r, centerInterference = read inter }
 
 renderAsSphinx :: MatchPattern -> Text
 renderAsSphinx = undefined
