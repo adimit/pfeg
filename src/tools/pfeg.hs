@@ -123,7 +123,8 @@ score :: Token Text -> [Prediction] -> PFEG Score (SphinxPattern,Text)
 score t ps = do
     tickScore
     currentScore <- get
-    (bestPrediction,pattern) <- findBestPrediction ps 
+    def <- liftM (T.pack . majorityBaseline) ask
+    let (bestPrediction,pattern) = findBestPrediction def ps
     put $! case t of
                 Masked { original = orig, surface = sfc, alternatives = alts } ->
                                           whichCase currentScore bestPrediction sfc orig alts
@@ -146,11 +147,10 @@ whichCase s@PredictScore { } p gold orig alts
      | orig `elem` alts           = s { scoreABBContained = scoreABBContained s + 1 }
      | otherwise = s { scoreABC = scoreABC s + 1 }
 
-findBestPrediction :: [Prediction] -> PFEG a (Text,SphinxPattern)
-findBestPrediction ps = do
-    def <- liftM (T.pack . majorityBaseline) ask
-    return $ fromMaybe (def, MajorityBaseline) (listToMaybe . catMaybes $
-             zipWith f (map listToMaybe ps) patterns)
+findBestPrediction :: Text -> [Prediction] -> (Text,SphinxPattern)
+findBestPrediction majBase ps =
+    fromMaybe (majBase, MajorityBaseline) (listToMaybe . catMaybes $
+              zipWith f (map listToMaybe ps) patterns)
     where f Nothing _ = Nothing
           f (Just (x,_))  p = Just (x,p)
 
