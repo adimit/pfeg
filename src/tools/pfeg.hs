@@ -195,8 +195,9 @@ matchLogger l c = do
 unique :: (Hashable a, Eq a) => [a] -> [a]
 unique = Set.toList . Set.fromList
 
+-- | Retrieve excerpts from the Sphinx server.
 getEx :: ExcerptConfiguration -> String -> [Text] -> Text -> IO ([Text], Maybe Text)
-getEx exConf index docs qry = liftM getQueryResults $ buildExcerpts exConf docs index qry
+getEx ec index docs qry = liftM getQueryResults $ buildExcerpts ec docs index qry
 
 -- | Count elements in a list
 count :: (Hashable a, Eq a, Num b, Ord b) => [a] -> [(a,b)]
