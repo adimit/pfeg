@@ -359,7 +359,10 @@ makeQuery' c level p = do
               , let p' = prox x in if p' <= 1 then T.empty else T.pack $ '~':show p' ]
 
 wrap :: Char -> Text -> Text
-wrap c x = T.cons c $ T.concat [x, T.singleton c]
+wrap c = wrap2 c c
+
+wrap2 :: Char -> Char -> Text -> Text
+wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 
 patterns :: [SphinxPattern]
 patterns = [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
