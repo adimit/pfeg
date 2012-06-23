@@ -8,7 +8,7 @@ module PFEG.Common
       -- * Attoparsec parsers for the TT-style corpora
     , tokenP
     , sentenceP
-      -- * Triplet operations (useful for @Word@
+      -- * Triplet operations
     , fst3
     , snd3
     , trd3
