@@ -11,6 +11,8 @@ module PFEG.Pattern
     , parsePattern
     , renderAsSphinx
     , matchParser
+    , makeQuery
+    , patternRestriction
     ) where
 
 import PFEG.Types
@@ -20,7 +22,7 @@ import Data.Text (Text)
 import Text.Parsec.Char
 import Text.Parsec.Prim
 import Text.Parsec.Combinator
-import PFEG.Context (Item,Context)
+import PFEG.Context (Restriction,Item,Context)
 import qualified PFEG.Context as C
 import Control.Monad (liftM)
 import qualified Data.Text as T
@@ -49,8 +51,11 @@ instance Show Match where
 instance Show MatchPattern where
     show mp = show (level mp) ++ show (left mp) ++ '-':show (centerInterference mp) ++ '-':show (right mp)
 
+patternRestriction :: MatchPattern -> Restriction
+patternRestriction MatchPattern { left = Match { size = l } , right = Match { size = r } } = (l,r)
+
 parseLevel :: Parser Level
-parseLevel = (char 'S' >> return Lemma) <|> (char 'L' >> return Surface)
+parseLevel = (char 'L' >> return Lemma) <|> (char 'S' >> return Surface)
 
 parseMatch :: Parser Match
 parseMatch = do
@@ -76,6 +81,21 @@ renderAsSphinx i p =
                 , pr rwords (right p) ]
     where pr ws m = T.concat [ wrap '"' . T.intercalate " " $ renderLevel (level p):ws
                              , renderTolerance (tolerance m) ]
+
+makeQuery :: C.Context (Token Text) -> MatchPattern -> Text
+makeQuery cxt' p =
+    let cxt = retrieveWords' cxt' p
+    in T.intercalate " " [ pr (C.left cxt) (left p)
+                         , T.pack "<<<"
+                         , pr (C.right cxt) (right p)]
+    where pr ws m = T.concat [ wrap '"' . T.intercalate " " $ renderLevel (level p):ws
+                             , renderTolerance (tolerance m) ]
+
+retrieveWords' :: Context (Token a) -> MatchPattern -> Context a
+retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)
+    where lvl = case level p of 
+                     Surface -> surface
+                     Lemma -> lemma
 
 matchParser :: [Text] -> Context (Token Text) -> Sentence Text -> [MatchData]
 matchParser targets cxt s =

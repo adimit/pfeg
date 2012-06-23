@@ -16,10 +16,13 @@ module PFEG.Common
     , countChunksI
     , corpusI
       -- * Misc
+    , restrictContextToPattern
     , nullToken
     , modify'
     ) where
 
+import PFEG.Pattern
+import PFEG.Context
 import PFEG.Types
 import Data.Time.Clock
 import qualified Data.Text as X
@@ -48,6 +51,9 @@ import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
+
+restrictContextToPattern :: MatchPattern -> Context a -> Context a
+restrictContextToPattern p = restrictContext (patternRestriction p)
 
 doTimed :: IO a -> IO (a,NominalDiffTime)
 doTimed f = do
