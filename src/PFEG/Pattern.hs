@@ -29,6 +29,7 @@ import qualified Data.Text as T
 data MatchData = MatchData
     { predictedTarget  :: Token Text
     , interferingWords :: Interference (Token Text)
+    , matchPattern     :: MatchPattern
     } deriving Show
 
 data MatchPattern = MatchPattern { left  :: Match
@@ -85,13 +86,14 @@ retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)
                      Surface -> surface
                      Lemma -> lemma
 
-matchParser :: [Text] -> Context (Token Text) -> Sentence Text -> [MatchData]
-matchParser targets cxt s =
-    let prediction = findTarget ((`elem` targets).surface) (C.left cxt, C.right cxt) s
-    in  maybe [] pred2match prediction
+matchParser :: MatchPattern -> [Text] -> Context (Token Text) -> Sentence Text -> [MatchData]
+matchParser p targets cxt' s =
+    let cxt = (C.restrictContext (patternRestriction p) cxt')
+        prediction = findTarget ((`elem` targets).surface) (C.left cxt, C.right cxt) s
+    in  maybe [] (pred2match p) prediction
 
-pred2match :: Prediction (Token Text) -> [MatchData]
-pred2match (Prediction possT f_inter) = map (\t -> MatchData t (f_inter t)) possT
+pred2match :: MatchPattern -> Prediction (Token Text) -> [MatchData]
+pred2match p (Prediction possT f_inter) = map (\t -> MatchData t (f_inter t) p) possT
 
 renderLevel :: Level -> Text
 renderLevel Surface = "@surface"
