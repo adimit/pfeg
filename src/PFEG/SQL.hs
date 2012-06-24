@@ -28,9 +28,10 @@ insertSentence :: String
 insertSentence = "INSERT INTO records (surface,lemma,pos) VALUES (?,?,?)"
 
 item2SQL :: Item Text -> [SqlValue]
-item2SQL Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs), target = t } =
-    [ tsql ls, tsql rs, tsql ll, tsql rl, toSql (surface t) ]
-    where tsql = toSql . T.unwords
+item2SQL = undefined 
+  --   Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs), target = t } =
+  --   [ tsql ls, tsql rs, tsql ll, tsql rl, toSql (surface t) ]
+  --   where tsql = toSql . T.unwords
 
 -- | Prepare a @Sentence Text@ for use with @insertSentence@.
 sentence2SQL :: Sentence Text -> [SqlValue]

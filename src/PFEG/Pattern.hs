@@ -9,7 +9,6 @@ module PFEG.Pattern
     , Interference(..)
       -- ** Parsing and rendering functions for patterns
     , parsePattern
-    , renderAsSphinx
     , matchParser
     , makeQuery
     , patternRestriction
@@ -22,7 +21,7 @@ import Data.Text (Text)
 import Text.Parsec.Char
 import Text.Parsec.Prim
 import Text.Parsec.Combinator
-import PFEG.Context (Restriction,Item,Context)
+import PFEG.Context (Restriction,Context)
 import qualified PFEG.Context as C
 import Control.Monad (liftM)
 import qualified Data.Text as T
@@ -71,17 +70,6 @@ parsePattern = do
     r     <- char '-' >> parseMatch
     return MatchPattern { level = lvl, left = l, right = r, centerInterference = read inter }
 
--- | Given an item i and pattern p, construct a query for the Sphinx server
--- that looks for something similar to i as defined by p.
-renderAsSphinx :: C.Item Text -> MatchPattern -> Text
-renderAsSphinx i p =
-    let (lwords,rwords) = retrieveWords i p
-    in T.concat [ pr lwords (left p)
-                , T.pack ('-':show (centerInterference p))
-                , pr rwords (right p) ]
-    where pr ws m = T.concat [ wrap '"' . T.intercalate " " $ renderLevel (level p):ws
-                             , renderTolerance (tolerance m) ]
-
 makeQuery :: C.Context (Token Text) -> MatchPattern -> Text
 makeQuery cxt' p =
     let cxt = retrieveWords' cxt' p
@@ -109,18 +97,9 @@ renderLevel :: Level -> Text
 renderLevel Surface = "@surface"
 renderLevel Lemma   = "@lemma"
 
-chooseLevel :: Level -> Item a -> Context a
-chooseLevel Surface = C.itemSurface
-chooseLevel Lemma   = C.itemLemma
-
 wrap :: Char -> Text -> Text
 wrap c x = T.cons c $ T.concat [x, T.singleton c]
 
 renderTolerance :: Int -> Text
 renderTolerance t | t <= 1    = T.empty
                   | otherwise = if t > 0 then T.pack ('~':show t) else T.empty
-
-retrieveWords :: Item a -> MatchPattern -> ([a],[a])
-retrieveWords i MatchPattern { left = l, right = r, level = lvl } =
-    ( reverse . take (size l) . reverse . C.left  . chooseLevel lvl $ i
-    ,           take (size r)           . C.right . chooseLevel lvl $ i )

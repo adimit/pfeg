@@ -10,7 +10,7 @@ import Text.Search.Sphinx.ExcerptConfiguration (ExcerptConfiguration)
 import Data.Text.ICU hiding (compare,pattern)
 import Data.Hashable (Hashable)
 
-import Data.Maybe (mapMaybe,fromMaybe,listToMaybe,catMaybes)
+import Data.Maybe (mapMaybe)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
 import PFEG
@@ -53,6 +53,8 @@ import PFEG.Configuration
 import qualified ReadArgs as RA
 import qualified Data.HashSet as Set
 
+import qualified PFEG.Pattern as Pat
+
 main :: IO ()
 main = do
     (mode :: String, configFile :: FilePath) <- RA.readArgs
@@ -85,23 +87,27 @@ process session =
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialMatchScore session)
-          let it = standardIteratee (getItems $ targets session) (matchF chan)
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
           void $ workOnCorpora it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
-          let it = standardIteratee (getMaskedItems' $ targets session) (matchF chan)
+          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
           void $ workOnCorpora it session () cs
 
 matchF :: QueryChan -> ItemProcessor_
-matchF log item = do
+matchF log i = do
     session <- ask
-    queries <- mapM (makeAQuery item) patterns
+    queries <- mapM (querify.Pat.makeQuery (snd i)) patterns
     liftIO $ do
         putStr "Querying…"
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-        writeChan log $ QueryData (map queryString queries) item results time
+        writeChan log $ QueryData (map queryString queries) i results time
         putStr "\r"
+
+querify :: Text -> PFEG st Query
+querify q = do index <- liftM sphinxIndex ask
+               return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
 
 type QueryChan = Chan QueryData
 
@@ -119,17 +125,17 @@ initialMatchScore = MatchScore 0 0
 tickScore :: (MonadState Score m) => m ()
 tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
 
-score :: Token Text -> [Prediction] -> PFEG Score (SphinxPattern,Text)
-score t ps = do
-    tickScore
-    currentScore <- get
-    def <- liftM (T.pack . majorityBaseline) ask
-    let (bestPrediction,pattern) = findBestPrediction def ps
-    put $! case t of
-                Masked { original = orig, surface = sfc, alternatives = alts } ->
-                                          whichCase currentScore bestPrediction sfc orig alts
-                Word { surface = sfc } -> whichCase currentScore bestPrediction sfc T.empty []
-    return (pattern,bestPrediction)
+-- score :: Token Text -> [Prediction] -> PFEG Score (SphinxPattern,Text)
+-- score t ps = do
+--     tickScore
+--     currentScore <- get
+--     def <- liftM (T.pack . majorityBaseline) ask
+--     let (bestPrediction,pattern) = findBestPrediction def ps
+--     put $! case t of
+--                 Masked { original = orig, surface = sfc, alternatives = alts } ->
+--                                           whichCase currentScore bestPrediction sfc orig alts
+--                 Word { surface = sfc } -> whichCase currentScore bestPrediction sfc T.empty []
+--     return (pattern,bestPrediction)
 
 whichCase :: Score -> Text -> Text -> Text -> [Text] -> Score
 whichCase s@MatchScore { } p gold _orig alts
@@ -147,12 +153,12 @@ whichCase s@PredictScore { } p gold orig alts
      | orig `elem` alts           = s { scoreABBContained = scoreABBContained s + 1 }
      | otherwise = s { scoreABC = scoreABC s + 1 }
 
-findBestPrediction :: Text -> [Prediction] -> (Text,SphinxPattern)
-findBestPrediction majBase ps =
-    fromMaybe (majBase, MajorityBaseline) (listToMaybe . catMaybes $
-              zipWith f (map listToMaybe ps) patterns)
-    where f Nothing _ = Nothing
-          f (Just (x,_))  p = Just (x,p)
+-- findBestPrediction :: Text -> [Prediction] -> (Text,SphinxPattern)
+-- findBestPrediction majBase ps =
+--     fromMaybe (majBase, MajorityBaseline) (listToMaybe . catMaybes $
+--               zipWith f (map listToMaybe ps) patterns)
+--     where f Nothing _ = Nothing
+--           f (Just (x,_))  p = Just (x,p)
 
 bs :: LB.ByteString -> Text
 bs = decodeUtf8 . SB.concat . LB.toChunks
@@ -182,15 +188,15 @@ matchLogger l c = do
         mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
         let prediction = map (count . concatMap (getPrediction (mRegex . pfegMode $ session))) excerpts
         return (item,time,prediction)
-    (winningPattern,bestPrediction) <- score (target item) prediction
+    (winningPattern,bestPrediction) <- undefined -- score (fst item) prediction
     newScore <- get
     let ls = zipWith (logDataLine item (totalScored newScore) time) prediction patterns
     liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
                 putStrLn $ "P: " ++ T.unpack bestPrediction ++
-                         "\nA: " ++ show (target item) ++
+                         "\nA: " ++ show (fst item) ++
                          "\nT: " ++ renderS time ++
                          "\nS: " ++ show newScore ++
-                         "\nX: " ++ show winningPattern
+                         "\nX: " ++ show (winningPattern :: Pat.MatchPattern)
 
 -- | Remove duplicates from a list
 unique :: (Hashable a, Eq a) => [a] -> [a]
@@ -246,15 +252,13 @@ canonicalPredictScore = [ scoreAAA
                         , scoreAABContained
                         , scoreABBContained ]
 
-logDataLine :: Item Text -> Int -> NominalDiffTime -> Prediction -> SphinxPattern -> String
-logDataLine Item { itemLemma = Context lcl rcl
-                 , itemSurface = Context lcs rcs
-                 , target = w } x time ps p =
+logDataLine :: Item Text -> Int -> NominalDiffTime -> Prediction -> Pat.MatchPattern -> String
+logDataLine (w,Context { left = lc, right = rc }) x time ps p =
     intercalate "\t" $ [ show x                        -- item number
-                       , T.unpack . surface $ w        -- actually there
+                       , T.unpack w        -- actually there
                        , show p ]                      -- pattern
                        ++ predictions ps               -- our predictions
-                       ++ map untext [lcl,rcl,lcs,rcs] -- the item
+                       ++ map untext [map surface lc,map surface rc] -- the item
                        ++ [ renderS time ]             -- the time the query took
 
 -- first three predictions
@@ -313,50 +317,19 @@ instance Show SphinxPattern where
     show MajorityBaseline = "majority baseline"
     show p = getLetter p : show (width p) ++ show (tolerance p)
 
-testItem, testItem' :: Item String
-testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule", "in", "kazachstan"]
-                 , itemLemma   = Context ["ich","gehen"] ["d", "schule", "in", "kazachstan"]
-                 , target = Word "in" "in" "in" }
-
-testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni", "in", "kazachstan"]
-                 , itemLemma   = Context ["ich","gehen"] ["d", "uni", "in", "kazachstan"]
-                 , target = Word "auf" "auf" "auf" }
+-- testItem, testItem' :: Item String
+-- testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule", "in", "kazachstan"]
+--                  , itemLemma   = Context ["ich","gehen"] ["d", "schule", "in", "kazachstan"]
+--                  , target = Word "in" "in" "in" }
+--
+-- testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni", "in", "kazachstan"]
+--                  , itemLemma   = Context ["ich","gehen"] ["d", "uni", "in", "kazachstan"]
+--                  , target = Word "auf" "auf" "auf" }
 
 getLetter :: SphinxPattern -> Char
 getLetter Surface {} = 's'
 getLetter Lemma   {} = 'l'
 getLetter MajorityBaseline = 'M'
-
-getContext :: Item a -> SphinxPattern -> ([a],[a])
-getContext Item { itemSurface = (Context ls rs) } (Surface {width = w}) = makeContext ls rs w
-getContext Item { itemLemma   = (Context ls rs) } (Lemma {width = w})   = makeContext ls rs w
-getContext _ MajorityBaseline = ([],[])
-
-makeContext :: [a] -> [a] -> Int -> ([a],[a])
-makeContext ls rs i = (reverse $ take i (reverse ls),take i rs)
-
-makeAQuery :: Item Text -> SphinxPattern -> PFEG a Query
-makeAQuery item pattern = do
-    let mkQ :: Item Text -> SphinxPattern -> PFEG a Text
-        mkQ Item { itemSurface = c } p@Surface { } = makeQuery' c "@surface" p
-        mkQ Item { itemLemma   = c } p@Lemma   { } = makeQuery' c "@lemma"   p
-        mkQ _ x = error $ "Pattern type "++ show x ++" not suited for query construction."
-    q <- mkQ item pattern
-    index <- liftM sphinxIndex ask
-    return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
-
-makeQuery' :: Context Text -> Text -> SphinxPattern -> PFEG a Text
-makeQuery' c level p = do
-    ts <- liftM targets ask
-    let w = width p
-        leftContext  = reverse . take w . reverse . left $ c
-        rightContext = take w . right $ c
-        prox x       = tolerance p + 2 * length (filter (`elem` ts) x)
-    -- TODO: Replace << with NEAR, though watch out for the silly tag-counts-as-position bug.
-    return $ T.intercalate " " [level, mkC prox leftContext, "<<", mkC prox rightContext]
-    where mkC prox x = T.concat 
-              [ wrap '"' . T.unwords $ x
-              , let p' = prox x in if p' <= 1 then T.empty else T.pack $ '~':show p' ]
 
 wrap :: Char -> Text -> Text
 wrap c = wrap2 c c
@@ -364,8 +337,8 @@ wrap c = wrap2 c c
 wrap2 :: Char -> Char -> Text -> Text
 wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 
-patterns :: [SphinxPattern]
-patterns = [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
+patterns :: [Pat.MatchPattern]
+patterns = undefined -- [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
 
 workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
 workOnCorpora it session st = mapM $ \ c@(cName,cFile) -> do
@@ -394,8 +367,8 @@ recordF mvar s = do
        then put (0,[]) >> liftIO (putMVar mvar vals')
        else put (i+1,vals')
 
-standardIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
-standardIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
+itemIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
+itemIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
 
 sentenceIteratee :: SentenceProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
 sentenceIteratee = I.mapChunksM_
