@@ -10,7 +10,7 @@ import Text.Search.Sphinx.ExcerptConfiguration (ExcerptConfiguration)
 import Data.Text.ICU hiding (compare,pattern)
 import Data.Hashable (Hashable)
 
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromJust,isJust,mapMaybe)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
 import PFEG
@@ -102,7 +102,7 @@ matchF log i = do
     liftIO $ do
         putStr "Querying…"
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-        writeChan log $ QueryData (map queryString queries) i results time
+        writeChan log $ QueryData i results time
         putStr "\r"
 
 querify :: Text -> PFEG st Query
@@ -112,8 +112,7 @@ querify q = do index <- liftM sphinxIndex ask
 type QueryChan = Chan QueryData
 
 data QueryData = QueryData
-    { qStrings :: ![Text]
-    , qItem    :: !(Item Text)
+    { qItem    :: !(Item Text)
     , qResults :: !(Sphinx.Result [QueryResult])
     , qTime    :: !NominalDiffTime }
     deriving (Show)
@@ -178,13 +177,13 @@ matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     session <- ask
     (item,time,prediction) <- liftIO $ do
-        (QueryData queries item response time) <- readChan c
+        (QueryData item response time) <- readChan c
         let (results, msg) = getQueryResults response
             docids = map parseResult results
-        docMap <- queryDB (database session) . concat $ unique docids
-        let docs = zipWith chooseSide queries (map (map $ lookupDoc docMap) docids)
+        docMap <- queryDB (database session) . unique . concat $ docids
+        let docs = undefined -- zipWith chooseSide queries (map (map $ lookupDoc docMap) docids)
         (excerpts,msgs) <- liftM unzip $
-            zipWithM (getEx (exConf . pfegMode $ session) (sphinxIndex session)) docs queries
+            zipWithM (getEx (exConf . pfegMode $ session) (sphinxIndex session)) docs undefined -- queries
         mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
         let prediction = map (count . concatMap (getPrediction (mRegex . pfegMode $ session))) excerpts
         return (item,time,prediction)
@@ -197,6 +196,30 @@ matchLogger l c = do
                          "\nT: " ++ renderS time ++
                          "\nS: " ++ show newScore ++
                          "\nX: " ++ show (winningPattern :: Pat.MatchPattern)
+
+matchLogger' :: Handle -> QueryChan -> PFEG Score ()
+matchLogger' l c = do
+    session <- ask
+    (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
+    let preds    = concatMap (getMatches (targets session) patterns $ snd item) sentences
+        winningPattern = findBestPrediction (snd item) preds
+    newScore <- get
+    liftIO $ undefined -- print status to l
+
+getMatches :: [Text] -> [Pat.MatchPattern] -> Context (Token Text) -> Sentence Text -> [Pat.MatchData]
+getMatches trgs pats c s = concatMap (\p -> Pat.matchParser p trgs c s) pats
+
+retrieveSentences :: Connection -> QueryChan -> IO (Item Text, NominalDiffTime, [Sentence Text])
+retrieveSentences conn c = do
+    (QueryData item response time) <- readChan c
+    let (results,msg) = getQueryResults response
+        docids = map parseResult results
+    when (isJust msg) $ putStrLn $ "WARNING: " ++ (T.unpack . fromJust $ msg)
+    sentences <- queryDB conn . unique . concat $ docids
+    return (item,time,sentences)
+
+findBestPrediction :: Context (Token Text) -> [Pat.MatchData] -> Pat.MatchData
+findBestPrediction = undefined
 
 -- | Remove duplicates from a list
 unique :: (Hashable a, Eq a) => [a] -> [a]
@@ -227,14 +250,20 @@ chooseSide :: Text          -- ^ The query string
 chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
                | otherwise                 = map fst d
 
--- | Get surface and lemma of documents from the DB in batch.
-queryDB :: Connection -> [DocId] -> IO (M.HashMap DocId (Text,Text))
+-- | Get sentence data structures of documents from the DB in batch.
+queryDB :: Connection -> [DocId] -> IO [Sentence Text]
 queryDB conn ids = do
     let arg = (++")") . ('(':) . intercalate "," . map show $ ids
-    sql <- liftIO $ quickQuery' conn ("SELECT surface,lemma FROM records WHERE id in " ++ arg) []
-    return . M.fromList $ zip ids (map fsql sql)
-    where fsql (s:l:[]) = (fromSql s, fromSql l)
-          fsql x        = error $ "SQL reply not in the right format:\n" ++ groom x
+    sql <- liftIO $ quickQuery' conn ("SELECT surface,lemma,pos FROM records WHERE id in " ++ arg) []
+    return $ map mkSentence sql
+    where mkSentence :: [SqlValue] -> Sentence Text
+          -- The reason we're using the explicit Word record syntax here is to never mix up surface, pos, and lemma
+          -- as this can lead to embarrassing and difficult to detect bugs.
+          mkSentence (s:l:p:[]) = zipWith3 (\s' l' p' -> Word { pos = p', lemma = l', surface = s' })
+                                  (sqlw p) (sqlw l) (sqlw s)
+          mkSentence x          = error $ "SQL reply not in the right format:\n" ++ groom x
+          sqlw :: SqlValue -> [Text]
+          sqlw = T.words . fromSql
 
 scoreboard :: Score -> [String]
 scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
