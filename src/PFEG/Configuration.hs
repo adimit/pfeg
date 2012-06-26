@@ -22,6 +22,9 @@ import System.IO (hClose,openFile,IOMode(..),Handle)
 import Control.Monad.Error
 import Data.List.Split (splitOn)
 import qualified Text.Search.Sphinx.ExcerptConfiguration as Ex
+import qualified PFEG.Pattern as Pat
+import Data.Either
+import qualified Text.Parsec as Parsec
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -45,6 +48,7 @@ data PFEGConfig = PFEGConfig
     , majorityBaseline :: String
     , sphinxIndex :: String
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
+    , patterns :: [Pat.MatchPattern]
     }
 
 data ModeConfig = Record { corpora   :: [Corpus] }
@@ -110,6 +114,7 @@ initialize modeString cfg = do
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
     sindex <- getValue cfg "sphinx" "index"
+    pats <- getPatterns cfg "patterns" "patterns"
     runas <- case mode of
       RunMatch -> do
             test  <- getCorpusSet cfg "tasks" "match"
@@ -131,13 +136,14 @@ initialize modeString cfg = do
                            , searchConf = defaultSearchConf shost sport
                            , resultLog  = resL }
     liftIO $ putStrLn "Done."
-    return PFEGConfig { pfegMode   = runas
-                      , database   = db
-                      , statusLine = statC
-                      , sphinxIndex= sindex
-                      , targets    = targs
+    return PFEGConfig { pfegMode         = runas
+                      , database         = db
+                      , statusLine       = statC
+                      , sphinxIndex      = sindex
+                      , targets          = targs
                       , majorityBaseline = majB
-                      , chunkSize  = csize }
+                      , patterns         = pats
+                      , chunkSize        = csize }
 
 defaultExcerptConf :: String -> Int -> Ex.ExcerptConfiguration
 defaultExcerptConf shost sport = Ex.altConfig
@@ -159,6 +165,15 @@ openHandle :: IOMode -> Config -> SectionName -> OptionName -> Configurator Hand
 openHandle mode cfg sec opt = do
     fname <- getValue cfg sec opt
     liftC $ openFile fname mode
+
+getPatterns :: Config -> SectionName -> OptionName -> Configurator [Pat.MatchPattern]
+getPatterns cfg sec name = do
+    ps <- liftM (map T.unpack . splitAndStrip) $ getValue cfg sec name 
+    parseResults <- forM ps (liftM (Parsec.parse Pat.parsePattern "" . T.pack) . getValue cfg sec)
+    let (errs,pats) = partitionEithers parseResults
+    forM_ errs $ \err -> liftC (putStrLn $ "WARNING: " ++ show err)
+    return pats
+
 
 getCorpusSet :: Config -> SectionName -> OptionName -> Configurator [Corpus]
 getCorpusSet cfg sec opt = do
