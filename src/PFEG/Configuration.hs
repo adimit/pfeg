@@ -47,8 +47,7 @@ data PFEGConfig = PFEGConfig
     , majorityBaseline :: String
     , sphinxIndex :: String
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
-    , patterns :: [Pat.MatchPattern]
-    }
+    , patterns :: [Pat.MatchPattern] }
 
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
