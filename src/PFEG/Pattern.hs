@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections, OverloadedStrings #-}
 module PFEG.Pattern
     ( -- * Pattern data types
       -- | Types for patterns inside @PFEG@
@@ -35,7 +35,8 @@ data MatchData = MatchData
 data MatchPattern = MatchPattern { left  :: Match
                                  , right :: Match
                                  , centerInterference  :: Int
-                                 , level :: Level}
+                                 , level :: Level
+                                 , weight :: Double }
 
 data Match = Match { size :: Int, tolerance :: Int }
 
@@ -49,10 +50,15 @@ instance Show Match where
     show Match { size = s, tolerance = t } = show s ++ '~':show t
 
 instance Show MatchPattern where
-    show mp = show (level mp) ++ show (left mp) ++ '-':show (centerInterference mp) ++ '-':show (right mp)
+    show mp = show (level mp) ++ show (left mp) ++ '-':show (centerInterference mp) ++ '-':show (right mp) ++ '|':show (weight mp)
 
 patternRestriction :: MatchPattern -> Restriction
 patternRestriction MatchPattern { left = Match { size = l } , right = Match { size = r } } = (l,r)
+
+parseWeight :: Parser Double
+parseWeight = do
+    numString <- char '|' >> many1 (digit <|> char '.')
+    return $ read numString
 
 parseLevel :: Parser Level
 parseLevel = (char 'L' >> return Lemma) <|> (char 'S' >> return Surface)
@@ -67,9 +73,12 @@ parsePattern :: Parser MatchPattern
 parsePattern = do
     lvl <- parseLevel
     l <- parseMatch
-    inter <- char '-' >> many1 digit
-    r     <- char '-' >> parseMatch
-    return MatchPattern { level = lvl, left = l, right = r, centerInterference = read inter }
+    (inter,r) <- try (do
+        inter <- char '-' >> many1 digit
+        r     <- char '-' >> parseMatch
+        return (inter,r)) <|> liftM ("1",) (char '-' >> parseMatch)
+    w <- option 1.0 parseWeight
+    return MatchPattern { level = lvl, left = l, right = r, centerInterference = read inter, weight = w }
 
 makeQuery :: C.Context (Token Text) -> MatchPattern -> Text
 makeQuery cxt' p =
