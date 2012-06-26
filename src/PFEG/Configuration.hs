@@ -126,15 +126,31 @@ initialize modeString cfg = do
                            , exConf     = defaultExcerptConf shost sport
                            , searchConf = defaultSearchConf shost sport
                            , resultLog  = resL }
-    liftIO $ putStrLn "Done."
-    return PFEGConfig { pfegMode         = runas
-                      , database         = db
-                      , statusLine       = statC
-                      , sphinxIndex      = sindex
-                      , targets          = targs
-                      , majorityBaseline = majB
-                      , patterns         = pats
-                      , chunkSize        = csize }
+    let config = PFEGConfig { pfegMode         = runas
+                            , database         = db
+                            , statusLine       = statC
+                            , sphinxIndex      = sindex
+                            , targets          = targs
+                            , majorityBaseline = majB
+                            , patterns         = pats
+                            , chunkSize        = csize }
+    liftIO $ do putStrLn "Done."
+                printConfig config
+    return config
+
+printConfig :: PFEGConfig -> IO ()
+printConfig c =
+    putStr $ "PFEG Configuration:\n" ++
+             "\tMajority baseline: " ++ majorityBaseline c ++ "\n\
+             \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
+             \\tPatterns: " ++ unwords (map show (patterns c)) ++ "\n\
+             \t\n" ++ showMode (pfegMode c)
+
+showMode :: ModeConfig -> String
+showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
+    where mode = case c of Record  {} -> "PFEG is in RECORD mode\n"
+                           Match   {} -> "PFEG is in MATCH mode\n"
+                           Predict {} -> "PFEG is in PREDICT mode\n"
 
 defaultExcerptConf :: String -> Int -> Ex.ExcerptConfiguration
 defaultExcerptConf shost sport = Ex.altConfig
