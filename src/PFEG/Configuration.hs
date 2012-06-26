@@ -47,7 +47,7 @@ data PFEGConfig = PFEGConfig
     , majorityBaseline :: String
     , sphinxIndex :: String
     , chunkSize  :: Int -- ^ Chunk size for the Iteratee
-    , patterns :: [Pat.MatchPattern] }
+    , matchPatterns :: [Pat.MatchPattern] }
 
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
@@ -132,7 +132,7 @@ initialize modeString cfg = do
                             , sphinxIndex      = sindex
                             , targets          = targs
                             , majorityBaseline = majB
-                            , patterns         = pats
+                            , matchPatterns    = pats
                             , chunkSize        = csize }
     liftIO $ do putStrLn "Done."
                 printConfig config
@@ -143,7 +143,7 @@ printConfig c =
     putStr $ "PFEG Configuration:\n" ++
              "\tMajority baseline: " ++ majorityBaseline c ++ "\n\
              \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
-             \\tPatterns: " ++ unwords (map show (patterns c)) ++ "\n\
+             \\tPatterns: " ++ unwords (map show (matchPatterns c)) ++ "\n\
              \t\n" ++ showMode (pfegMode c)
 
 showMode :: ModeConfig -> String
