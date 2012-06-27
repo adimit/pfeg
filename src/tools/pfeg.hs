@@ -152,14 +152,6 @@ whichCase s@PredictScore { } p gold orig alts
      | orig `elem` alts           = s { scoreABBContained = scoreABBContained s + 1 }
      | otherwise = s { scoreABC = scoreABC s + 1 }
 
--- findBestPrediction :: Text -> [Prediction] -> (Text,SphinxPattern)
--- findBestPrediction majBase ps =
---     fromMaybe (majBase, MajorityBaseline) (listToMaybe . catMaybes $
---               zipWith f (map listToMaybe ps) patterns)
---     where f Nothing _ = Nothing
---           f (Just (x,_))  p = Just (x,p)
---
-
 score :: Maybe Text -> Item Text -> PFEG Score Score
 score p i = do
     mB <- liftM majorityBaseline ask
