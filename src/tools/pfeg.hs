@@ -136,9 +136,10 @@ tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
 --                 Word { surface = sfc } -> whichCase currentScore bestPrediction sfc T.empty []
 --     return (pattern,bestPrediction)
 
-whichCase :: Score -> Text -> Text -> Text -> [Text] -> Score
-whichCase s@MatchScore { } p gold _orig alts
-     | p == gold || p `elem` alts = s { scoreCorrect = scoreCorrect s + 1 }
+
+whichCase :: Score -> Text -> Text -> Token Text -> Score
+whichCase = undefined {-s@MatchScore { } majB p t
+     | p == gold || p == majB = s { scoreCorrect = scoreCorrect s + 1 }
      | otherwise = s
 whichCase s@PredictScore { } p gold orig alts
      | p == gold && p == orig = s { scoreAAA = scoreAAA s + 1, scoreCorrect = scoreCorrect s + 1 }
@@ -150,14 +151,14 @@ whichCase s@PredictScore { } p gold orig alts
      | p `elem` alts              = s { scoreAABContained = scoreAABContained s + 1
                                       , scoreCorrect      = scoreCorrect s      + 1 }
      | orig `elem` alts           = s { scoreABBContained = scoreABBContained s + 1 }
-     | otherwise = s { scoreABC = scoreABC s + 1 }
+     | otherwise = s { scoreABC = scoreABC s + 1 } -}
 
 score :: Maybe Text -> Item Text -> PFEG Score Score
 score p i = do
     mB <- liftM majorityBaseline ask
     let isCorrect = case p of
-                         Nothing -> T.pack mB == fst i
-                         Just x  -> x == fst i
+                         Nothing -> T.pack mB == surface (fst i)
+                         Just x  -> x == surface (fst i)
     oldScore <- get
     if isCorrect
        then return $ oldScore { scoreCorrect = scoreCorrect oldScore + 1, totalScored = totalScored oldScore + 1 }
@@ -181,36 +182,28 @@ type DocMap = M.HashMap DocId (Text,Text)
 matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     session <- ask
-    (item,time,prediction) <- liftIO $ do
-        (QueryData item response time) <- readChan c
-        let (results, msg) = getQueryResults response
-            docids = map parseResult results
-        docMap <- queryDB (database session) . unique . concat $ docids
-        let docs = undefined -- zipWith chooseSide queries (map (map $ lookupDoc docMap) docids)
-        (excerpts,msgs) <- liftM unzip $
-            zipWithM (getEx (exConf . pfegMode $ session) (sphinxIndex session)) docs undefined -- queries
-        mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
-        let prediction = map (count . concatMap undefined) excerpts
-        return (item,time,prediction)
-    (winningPattern,bestPrediction) <- undefined -- score (fst item) prediction
-    newScore <- get
-    let ls = zipWith (logDataLine item (totalScored newScore) time) prediction patterns
-    liftIO $ do forM_ ls (\line -> hPutStrLn l line >> hFlush l)
-                putStrLn $ "P: " ++ T.unpack bestPrediction ++
-                         "\nA: " ++ show (fst item) ++
-                         "\nT: " ++ renderS time ++
-                         "\nS: " ++ show newScore ++
-                         "\nX: " ++ show (winningPattern :: Pat.MatchPattern)
-
-matchLogger' :: Handle -> QueryChan -> PFEG Score ()
-matchLogger' l c = do
-    session <- ask
     (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
-    let preds    = concatMap (getMatches (targets session) patterns $ snd item) sentences
-        prediction = findBestPrediction (snd item) preds
+    let preds      = concatMap (getMatches (targets session) patterns $ snd item) sentences
+        scoredData = scoreMatchData preds
+        prediction = findBestPrediction (snd item) scoredData
     newScore <- score (fmap fst prediction) item
     put $! newScore
-    liftIO undefined
+    liftIO $ do forM_ (map (showScoredData item (totalScored newScore)) scoredData) (\line -> hPutStrLn l line >> hFlush l)
+                putStrLn $ "P: " ++ show (fmap (T.unpack . fst) prediction) ++ "\n\
+                           \A: " ++ show (fst item) ++ "\n\
+                           \T: " ++ renderS time ++ "\n\
+                           \S: " ++ show newScore ++ "\n\
+                           \X: " ++ show (fmap snd prediction)
+
+showScoredData :: Item Text -> Int -> ScoredMatchData -> String
+showScoredData (t',ctxt) i (t,(p,s)) = intercalate "\t"
+    [ show i                                -- Index
+    , T.unpack . surface $ t'               -- Actual target
+    , T.unpack t                            -- Predicted target
+    , show p                                -- Pattern
+    , show s                                -- Score
+    , T.unpack . T.unwords . map surface . left $ ctxt    -- Left context
+    , T.unpack . T.unwords . map surface . right $ ctxt ] -- Right context
 
 getMatches :: [Text] -> [Pat.MatchPattern] -> Context (Token Text) -> Sentence Text -> [Pat.MatchData]
 getMatches trgs pats c s = concatMap (\p -> Pat.matchParser p trgs c s) pats
@@ -224,12 +217,14 @@ retrieveSentences conn c = do
     sentences <- queryDB conn . unique . concat $ docids
     return (item,time,sentences)
 
-findBestPrediction :: Context (Token Text) -> [Pat.MatchData] -> Maybe (Text,(Pat.MatchPattern,Double))
+type ScoredMatchData = (Text,(Pat.MatchPattern,Double))
+
+findBestPrediction :: Context (Token Text) -> [ScoredMatchData] -> Maybe ScoredMatchData
 findBestPrediction _ =
-    listToMaybe . sortBy (compare `on` (snd . snd)) . M.toList . M.fromListWith addWeights . scoreMatchData
+    listToMaybe . sortBy (compare `on` (snd . snd)) . M.toList . M.fromListWith addWeights
     where addWeights (p,x) (_,y) = (p, x + y)
 
-scoreMatchData :: [Pat.MatchData] -> [(Text,(Pat.MatchPattern,Double))]
+scoreMatchData :: [Pat.MatchData] -> [ScoredMatchData]
 scoreMatchData = map f
     where f d = ( surface . Pat.predictedTarget $ d
                 , ( Pat.matchPattern d
@@ -298,15 +293,6 @@ canonicalPredictScore = [ scoreAAA
                         , scoreAAAContained
                         , scoreAABContained
                         , scoreABBContained ]
-
-logDataLine :: Item Text -> Int -> NominalDiffTime -> Prediction -> Pat.MatchPattern -> String
-logDataLine (w,Context { left = lc, right = rc }) x time ps p =
-    intercalate "\t" $ [ show x                        -- item number
-                       , T.unpack w        -- actually there
-                       , show p ]                      -- pattern
-                       ++ predictions ps               -- our predictions
-                       ++ map untext [map surface lc,map surface rc] -- the item
-                       ++ [ renderS time ]             -- the time the query took
 
 -- first three predictions
 predictions :: Prediction -> [String]
