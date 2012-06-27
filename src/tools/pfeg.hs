@@ -202,9 +202,10 @@ matchLogger' l c = do
     session <- ask
     (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
     let preds    = concatMap (getMatches (targets session) patterns $ snd item) sentences
-        winningPattern = findBestPrediction (snd item) preds
-    newScore <- get
-    liftIO $ undefined -- print status to l
+        prediction = findBestPrediction (snd item) preds
+    newScore <- score (fmap fst prediction) item
+    put $! newScore
+    liftIO undefined
 
 getMatches :: [Text] -> [Pat.MatchPattern] -> Context (Token Text) -> Sentence Text -> [Pat.MatchData]
 getMatches trgs pats c s = concatMap (\p -> Pat.matchParser p trgs c s) pats
@@ -218,8 +219,20 @@ retrieveSentences conn c = do
     sentences <- queryDB conn . unique . concat $ docids
     return (item,time,sentences)
 
-findBestPrediction :: Context (Token Text) -> [Pat.MatchData] -> Pat.MatchData
-findBestPrediction = undefined
+findBestPrediction :: Context (Token Text) -> [Pat.MatchData] -> Maybe (Text,(Pat.MatchPattern,Double))
+findBestPrediction _ =
+    listToMaybe . sortBy (compare `on` (snd . snd)) . M.toList . M.fromListWith addWeights . scoreMatchData
+    where addWeights (p,x) (_,y) = (p, x + y)
+
+scoreMatchData :: [Pat.MatchData] -> [(Text,(Pat.MatchPattern,Double))]
+scoreMatchData = map f
+    where f d = ( surface . Pat.predictedTarget $ d
+                , ( Pat.matchPattern d
+                  , computeIntWeight (Pat.interferingWords d) + (Pat.weight . Pat.matchPattern $ d)))
+
+-- | TODO: dummy
+computeIntWeight :: Pat.Interference (Token Text) -> Double
+computeIntWeight = const 0.0
 
 -- | Remove duplicates from a list
 unique :: (Hashable a, Eq a) => [a] -> [a]
