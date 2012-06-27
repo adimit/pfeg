@@ -10,7 +10,7 @@ import Text.Search.Sphinx.ExcerptConfiguration (ExcerptConfiguration)
 import Data.Text.ICU hiding (compare,pattern)
 import Data.Hashable (Hashable)
 
-import Data.Maybe (fromJust,isJust,mapMaybe)
+import Data.Maybe (listToMaybe,fromJust,isJust,mapMaybe)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
 import PFEG
@@ -158,6 +158,19 @@ whichCase s@PredictScore { } p gold orig alts
 --               zipWith f (map listToMaybe ps) patterns)
 --     where f Nothing _ = Nothing
 --           f (Just (x,_))  p = Just (x,p)
+--
+
+score :: Maybe Text -> Item Text -> PFEG Score Score
+score p i = do
+    mB <- liftM majorityBaseline ask
+    let isCorrect = case p of
+                         Nothing -> T.pack mB == fst i
+                         Just x  -> x == fst i
+    oldScore <- get
+    if isCorrect
+       then return $ oldScore { scoreCorrect = scoreCorrect oldScore + 1, totalScored = totalScored oldScore + 1 }
+       else return $ oldScore { totalScored = totalScored oldScore + 1 }
+
 
 bs :: LB.ByteString -> Text
 bs = decodeUtf8 . SB.concat . LB.toChunks
@@ -185,7 +198,7 @@ matchLogger l c = do
         (excerpts,msgs) <- liftM unzip $
             zipWithM (getEx (exConf . pfegMode $ session) (sphinxIndex session)) docs undefined -- queries
         mapM_ (maybe (return ()) (putStrLn . T.unpack)) (msg:msgs)
-        let prediction = map (count . concatMap (getPrediction (mRegex . pfegMode $ session))) excerpts
+        let prediction = map (count . concatMap undefined) excerpts
         return (item,time,prediction)
     (winningPattern,bestPrediction) <- undefined -- score (fst item) prediction
     newScore <- get
