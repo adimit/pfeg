@@ -13,7 +13,6 @@ module PFEG.Context
 
 import PFEG.Types
 
-import Control.Arrow (first)
 import Data.Text (Text)
 
 import Data.List (findIndices)
@@ -27,7 +26,7 @@ data Context a = Context { left  :: ![a]
                          , right :: ![a]
                          } deriving (Functor,Show,Foldable,Traversable)
 
-type Item a = (a,Context (Token a))
+type Item a = (Token a,Context (Token a))
 type ItemGetter = Sentence Text -> [Item Text]
 
 isMasked :: Token a -> Bool
@@ -40,10 +39,10 @@ getContexts p s = map (mkContext . \i -> splitAt i s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = map (first surface) . getContexts (p.surface)
+getSentenceItems p = getContexts (p.surface)
 
 getMaskedItems :: (Text -> Bool) -> ItemGetter
-getMaskedItems p = map (first surface) . getContexts (liftM2 (&&) isMasked (p.surface))
+getMaskedItems p = getContexts (liftM2 (&&) isMasked (p.surface))
 
 type Restriction = (Int,Int)
 
