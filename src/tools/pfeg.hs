@@ -2,7 +2,7 @@
 module Main where
 
 import qualified Data.HashMap.Strict as M
-import Data.Time.Clock (NominalDiffTime)
+import Data.Time.Clock (getCurrentTime,NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
@@ -48,12 +48,27 @@ import Database.HDBC.MySQL
 
 import Graphics.Vty.Terminal
 
+import Control.Concurrent.STM
 import Text.Groom
 import PFEG.Configuration
 import qualified ReadArgs as RA
 import qualified Data.HashSet as Set
 
 import qualified PFEG.Pattern as Pat
+
+data DBAction = DBWrite Statement [[SqlValue]]
+              | Log Text Corpus
+
+dbthread :: Connection -> TChan DBAction -> IO ()
+dbthread conn chan = do
+    action <- atomically $ readTChan chan
+    perform action
+    where perform :: DBAction -> IO ()
+          perform (DBWrite stmt sql) = executeMany stmt sql
+          perform (Log event (name,fp)) = do
+              logStatement <- prepare conn insertAction
+              t <- getCurrentTime
+              void $ execute logStatement [toSql event, toSql name, toSql fp, toSql t]
 
 main :: IO ()
 main = do
