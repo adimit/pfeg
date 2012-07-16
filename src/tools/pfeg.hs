@@ -98,7 +98,7 @@ process session =
 matchF :: QueryChan -> ItemProcessor_
 matchF log i = do
     session <- ask
-    queries <- mapM (querify.Pat.makeQuery (snd i)) patterns
+    queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
         putStr "Querying…"
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
@@ -170,7 +170,7 @@ matchLogger :: Handle -> QueryChan -> PFEG Score ()
 matchLogger l c = do
     session <- ask
     (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
-    let preds      = concatMap (getMatches (targets session) patterns $ snd item) sentences
+    let preds      = concatMap (getMatches (targets session) (matchPatterns session) $ snd item) sentences
         scoredData = scoreMatchData preds
         prediction = findBestPrediction (snd item) scoredData
     newScore <- score (fmap fst prediction) item
