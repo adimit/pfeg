@@ -124,19 +124,6 @@ initialMatchScore = MatchScore 0 0
 tickScore :: (MonadState Score m) => m ()
 tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
 
--- score :: Token Text -> [Prediction] -> PFEG Score (SphinxPattern,Text)
--- score t ps = do
---     tickScore
---     currentScore <- get
---     def <- liftM (T.pack . majorityBaseline) ask
---     let (bestPrediction,pattern) = findBestPrediction def ps
---     put $! case t of
---                 Masked { original = orig, surface = sfc, alternatives = alts } ->
---                                           whichCase currentScore bestPrediction sfc orig alts
---                 Word { surface = sfc } -> whichCase currentScore bestPrediction sfc T.empty []
---     return (pattern,bestPrediction)
-
-
 whichCase :: Score -> Text -> Text -> Token Text -> Score
 whichCase = undefined {-s@MatchScore { } majB p t
      | p == gold || p == majB = s { scoreCorrect = scoreCorrect s + 1 }
@@ -344,20 +331,9 @@ data SphinxPattern = Surface { width :: !Int, tolerance :: !Int }
                    | Lemma   { width :: !Int, tolerance :: !Int }
                    | MajorityBaseline
 
--- TODO: add a Parser SphinxPattern so we can put patterns in the config
-
 instance Show SphinxPattern where
     show MajorityBaseline = "majority baseline"
     show p = getLetter p : show (width p) ++ show (tolerance p)
-
--- testItem, testItem' :: Item String
--- testItem' = Item { itemSurface = Context ["ich","gehe"] ["die","schule", "in", "kazachstan"]
---                  , itemLemma   = Context ["ich","gehen"] ["d", "schule", "in", "kazachstan"]
---                  , target = Word "in" "in" "in" }
---
--- testItem  = Item { itemSurface = Context ["ich","gehe"] ["die","uni", "in", "kazachstan"]
---                  , itemLemma   = Context ["ich","gehen"] ["d", "uni", "in", "kazachstan"]
---                  , target = Word "auf" "auf" "auf" }
 
 getLetter :: SphinxPattern -> Char
 getLetter Surface {} = 's'
@@ -369,9 +345,6 @@ wrap c = wrap2 c c
 
 wrap2 :: Char -> Char -> Text -> Text
 wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
-
-patterns :: [Pat.MatchPattern]
-patterns = undefined -- [ Surface x y | x <- [4,3,2,1], y <- [1..3] ] ++ [ Lemma x y | x <- [4,3,2,1] , y <- [1..3] ]
 
 workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
 workOnCorpora it session st = mapM $ \ c@(cName,cFile) -> do
