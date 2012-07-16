@@ -9,24 +9,29 @@ Build-type:    Simple
 
 Executable pfeg
     Build-Depends:   HDBC
+                   , HUnit
                    , base
                    , text
+                   , stm == 2.3.*
                    , mtl
+                   , text-icu
                    , ReadArgs
-                   , hsini
+                   , hsini == 0.1.999.1
                    , iteratee
                    , split
+                   , array
                    , hashable
                    , containers
                    , SHA2
                    , bytestring
                    , time
-                   , text
+                   , groom
                    , attoparsec
                    , binary
                    , convertible
+                   , old-locale == 1.0.*
                    , attoparsec-iteratee
-                   , transformers
+                   , transformers < 0.3
                    , safe
                    , unordered-containers
                    , MonadCatchIO-transformers
@@ -34,7 +39,7 @@ Executable pfeg
                    , MissingH >= 1.1.1.0
                    , HDBC-mysql
                    , parsec >= 3.1.2
-                   , sphinx
+                   , sphinx == 0.5.3.2
     ghc-options:   -O2 -Wall -threaded -rtsopts -funbox-strict-fields
     Main-is:       tools/pfeg.hs
 
