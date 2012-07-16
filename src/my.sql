@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS pfeg_de.records
 
 CREATE TABLE IF NOT EXISTS pfeg_de.log
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
-    , action VARCHAR(10)
+    , action VARCHAR(20)
     , completed DATE
     , version VARCHAR(10)
+    , corpusname VARCHAR(20)
     , corpusfile VARCHAR(200)
-    , corpusname VARCHAR(10)
     ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
