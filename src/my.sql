@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS pfeg_de.records
     , surface TEXT
     , lemma TEXT
     , pos TEXT
-    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
+    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS pfeg_de.log
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS pfeg_de.log
     , version VARCHAR(10)
     , corpusname VARCHAR(20)
     , corpusfile VARCHAR(200)
-    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci;
+    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci ENGINE=InnoDB;;
