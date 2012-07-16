@@ -49,6 +49,7 @@ import Database.HDBC.MySQL
 import Graphics.Vty.Terminal
 
 import Control.Concurrent.STM
+import Control.Concurrent.STM.TBChan
 import Text.Groom
 import PFEG.Configuration
 import qualified ReadArgs as RA
@@ -58,13 +59,16 @@ import qualified PFEG.Pattern as Pat
 
 data DBAction = DBWrite Statement [[SqlValue]]
               | Log Text Corpus
+              | Commit
 
-dbthread :: Connection -> TChan DBAction -> IO ()
+dbthread :: Connection -> TBChan DBAction -> IO ()
 dbthread conn chan = do
-    action <- atomically $ readTChan chan
+    action <- atomically $ readTBChan chan
     perform action
     where perform :: DBAction -> IO ()
           perform (DBWrite stmt sql) = executeMany stmt sql
+          perform  Commit = do time <- doTimed_ $ commit conn
+                               putStrLn $ "Commit took " ++ renderS time
           perform (Log event (name,fp)) = do
               logStatement <- prepare conn insertAction
               t <- getCurrentTime
@@ -89,26 +93,28 @@ main = do
                   process session)
 
 process :: PFEGConfig -> IO ()
-process session =
+process session = do
+    tchan <- atomically $ newTBChan 10
+    void $ forkIO . forever $ dbthread (database session) tchan
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertSentence
-          mvar <- newEmptyMVar
-          cmd <- newMVar ()
-          void $ forkIO . forever $ recorder s mvar cmd
-          let it = sentenceIteratee (recordF mvar)
-          void $ workOnCorpora it session (0,[]) cs
-          putStrLn "Waiting for DB…" >> takeMVar cmd
+          let it = sentenceIteratee (recordF tchan s)
+          void $ workOnCorpora "record" tchan it session (0,[]) cs
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialMatchScore session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
-          void $ workOnCorpora it session () cs
+          void $ workOnCorpora "match" tchan it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
           let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
-          void $ workOnCorpora it session () cs
+          void $ workOnCorpora "predict" tchan it session () cs
+    putStrLn "Waiting for DB…" 
+    atomically $ do
+        r <- tryPeekTBChan tchan
+        unless (isJust r) retry
 
 matchF :: QueryChan -> ItemProcessor_
 matchF log i = do
@@ -361,14 +367,19 @@ wrap c = wrap2 c c
 wrap2 :: Char -> Char -> Text -> Text
 wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 
-workOnCorpora :: I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
-workOnCorpora it session st = mapM $ \ c@(cName,cFile) -> do
+workOnCorpora :: Text -> TBChan DBAction -> I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
+workOnCorpora action tchan it session st = mapM $ \ c@(cName,cFile) -> do
     (threadID,logVar) <- evalPFEG (forkLogger c) () session
     let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                  [ countChunksI logVar , I.joinI $ I.convStream corpusI it ])
+    -- log to db that we're starting here
+    atomically $ writeTBChan tchan (Log (T.unwords [action,"start"]) c)
     res <- execPFEG iteratee st session
     killThread threadID
     putStrLn $ "Finished " ++ cName
+    -- log to db that we're finished here and commit
+    atomically $ do writeTBChan tchan (Log (T.unwords [action,"end"]) c)
+                    writeTBChan tchan Commit
     return res
 
 recorder :: Statement -> MVar RecordData -> MVar () -> IO ()
@@ -380,12 +391,12 @@ recorder s mvar cmd = do
 
 type RecordData = [[SqlValue]]
 
-recordF :: MVar RecordData -> SentenceProcessor (Int, RecordData)
-recordF mvar s = do
+recordF :: TBChan DBAction -> Statement -> SentenceProcessor (Int, RecordData)
+recordF chan stmt s = do
     (i,vals) <- get
     let vals' = sentence2SQL s:vals
     if i == 10000
-       then put (0,[]) >> liftIO (putMVar mvar vals')
+       then put (0,[]) >> liftIO (atomically (writeTBChan chan (DBWrite stmt vals')))
        else put (i+1,vals')
 
 itemIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
