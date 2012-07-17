@@ -98,7 +98,7 @@ main = do
 
 process :: PFEGConfig -> IO ()
 process session = do
-    tchan <- atomically $ newTBChan 10
+    tchan <- atomically $ newTBChan 2
     void $ forkIO . forever $ dbthread (database session) tchan
     case pfegMode session of
         Record{ corpora = cs } -> do
