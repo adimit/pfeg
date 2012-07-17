@@ -60,6 +60,7 @@ import qualified PFEG.Pattern as Pat
 data DBAction = DBWrite Statement [[SqlValue]]
               | Log Text Corpus
               | Commit
+              | Wait
 
 dbthread :: Connection -> TBChan DBAction -> IO ()
 dbthread conn chan = do
@@ -67,8 +68,11 @@ dbthread conn chan = do
     perform action
     where perform :: DBAction -> IO ()
           perform (DBWrite stmt sql) = executeMany stmt sql
-          perform  Commit = do time <- doTimed_ $ commit conn
+          perform  Commit = do atomically $ unGetTBChan chan Wait
+                               time <- doTimed_ $ commit conn
+                               void . atomically $ readTBChan chan
                                putStrLn $ "Commit took " ++ renderS time
+          perform Wait = putStrLn "Warning: We shouldn't ever get Wait from db chan. Something's fishy!"
           perform (Log event (name,fp)) = do
               logStatement <- prepare conn insertAction
               t <- getCurrentTime
