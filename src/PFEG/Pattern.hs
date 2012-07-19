@@ -82,12 +82,13 @@ parsePattern = do
 
 makeQuery :: C.Context (Token Text) -> MatchPattern -> Text
 makeQuery cxt' p =
-    let cxt = retrieveWords' cxt' p
-    in T.intercalate " " [ pr (C.left cxt) (left p)
-                         , T.pack "<<<"
-                         , pr (C.right cxt) (right p)]
-    where pr ws m = T.concat [ wrap '"' . T.intercalate " " $ renderLevel (level p):ws
-                             , renderTolerance (tolerance m) ]
+    let ctxt = retrieveWords' cxt' p
+    in case ctxt of
+           C.Context [] r -> pr r (right p)
+           C.Context l [] -> pr l (left p)
+           C.Context l r -> T.intercalate " " [ pr l (left p) , T.pack "NEAR/3" , pr r (right p)]
+    where pr ws m = T.unwords [ renderLevel (level p)
+                              , T.concat [wrap '"' (T.unwords ws),renderTolerance (tolerance m)]]
 
 retrieveWords' :: Context (Token a) -> MatchPattern -> Context a
 retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)

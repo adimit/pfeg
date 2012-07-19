@@ -125,12 +125,16 @@ process session = do
         where dbthreadIsDone (Just ShutdownACK) = True
               dbthreadIsDone _ = False
 
-matchF :: QueryChan -> ItemProcessor_
-matchF log i = do
-    session <- ask
+-- | debugging function for the REPL
+generateItems :: FilePath -> IO [Item Text]
+generateItems fp = do
+    let ig = getSentenceItems (`elem` T.words "auf in am")
+    liftM concat $
+        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ I.convStream corpusI (I.joinI $ I.mapChunks ig I.getChunks))
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
         putStr "Querying…"
+        mapM_ print queries
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
         writeChan log $ QueryData i results time
         putStr "\r"
