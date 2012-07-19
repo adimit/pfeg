@@ -60,19 +60,21 @@ import qualified PFEG.Pattern as Pat
 data DBAction = DBWrite Statement [[SqlValue]]
               | Log Text Corpus
               | Commit
-              | Wait
+              | Shutdown
+              | ShutdownACK
 
 dbthread :: Connection -> TBChan DBAction -> IO ()
-dbthread conn chan = do
-    action <- atomically $ readTBChan chan
-    perform action
-    where perform :: DBAction -> IO ()
+dbthread conn chan = go
+    where go = do action <- atomically $ readTBChan chan
+                  perform action
+                  case action of
+                       Shutdown -> return ()
+                       _ -> go
+          perform :: DBAction -> IO ()
           perform (DBWrite stmt sql) = executeMany stmt sql
-          perform  Commit = do atomically $ unGetTBChan chan Wait
-                               time <- doTimed_ $ commit conn
-                               void . atomically $ readTBChan chan
-                               putStrLn $ "Commit took " ++ renderS time
-          perform Wait = putStrLn "Warning: We shouldn't ever get Wait from db chan. Something's fishy!"
+          perform Shutdown = atomically $ writeTBChan chan ShutdownACK
+          perform ShutdownACK = putStrLn "WARNING: dbthread got its own ACK. That's stupid!"
+          perform Commit = commit conn
           perform (Log event (name,fp)) = do
               logStatement <- prepare conn insertAction
               t <- getCurrentTime
@@ -99,7 +101,7 @@ main = do
 process :: PFEGConfig -> IO ()
 process session = do
     tchan <- atomically $ newTBChan 2
-    void $ forkIO . forever $ dbthread (database session) tchan
+    _dbthread_id <- forkIO $ dbthread (database session) tchan
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertSentence
@@ -115,10 +117,13 @@ process session = do
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
           let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
           void $ workOnCorpora "predict" tchan it session () cs
-    putStrLn "Waiting for DB…" 
+    putStrLn "Waiting for DB…"
+    atomically $ writeTBChan tchan Shutdown
     atomically $ do
         r <- tryPeekTBChan tchan
-        unless (isJust r) retry
+        unless (dbthreadIsDone r) retry
+        where dbthreadIsDone (Just ShutdownACK) = True
+              dbthreadIsDone _ = False
 
 matchF :: QueryChan -> ItemProcessor_
 matchF log i = do
@@ -399,7 +404,7 @@ recordF :: TBChan DBAction -> Statement -> SentenceProcessor (Int, RecordData)
 recordF chan stmt s = do
     (i,vals) <- get
     let vals' = sentence2SQL s:vals
-    if i == 10000
+    if i == 7000
        then put (0,[]) >> liftIO (atomically (writeTBChan chan (DBWrite stmt vals')))
        else put (i+1,vals')
 
