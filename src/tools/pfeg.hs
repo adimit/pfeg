@@ -291,7 +291,7 @@ chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
 queryDB :: Connection -> [DocId] -> IO [Sentence Text]
 queryDB conn ids = do
     let arg = (++")") . ('(':) . intercalate "," . map show $ ids
-    sql <- liftIO $ quickQuery' conn ("SELECT surface,lemma,pos FROM records WHERE id in " ++ arg) []
+    sql <- liftIO $ quickQuery' conn ("SELECT pos,lemma,surface FROM records WHERE id in " ++ arg) []
     return $ map mkSentence sql
     where mkSentence :: [SqlValue] -> Sentence Text
           -- The reason we're using the explicit Word record syntax here is to never mix up surface, pos, and lemma
