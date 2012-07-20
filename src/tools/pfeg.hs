@@ -219,6 +219,12 @@ matchLogger l c = do
                            \S: " ++ show newScore ++ "\n\
                            \X: " ++ show (fmap snd prediction)
 
+prettyPrint :: Item Text -> String
+prettyPrint (t,ctxt) = T.unpack . T.unlines $
+    [ T.unwords ["\tTarget:",surface t]
+    , T.unwords $ "\tLeft Context:":map surface (left ctxt)
+    , T.unwords $ "\tRight Context:":map surface (right ctxt) ]
+
 showScoredData :: Item Text -> Int -> ScoredMatchData -> String
 showScoredData (t',ctxt) i (t,(p,s)) = intercalate "\t"
     [ show i                                -- Index
