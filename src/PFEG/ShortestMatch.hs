@@ -9,6 +9,8 @@ import Control.Monad.ST
 
 import Prelude hiding (all)
 
+import Debug.Trace
+
 data Candidate a = Candidate { candSize :: Int
                              , candIndex :: Int
                              , candMatch :: [a] -> [a]
@@ -88,6 +90,7 @@ maybeWriteSTRef ref new = do
         Just old -> when (old > new) $ writeSTRef ref (Just new)
 
 findBestCandidate :: [a -> Bool] -> [a] -> Maybe ([a],[a],[a])
+findBestCandidate [] _h = Nothing
 findBestCandidate ns h = fmap finishCandidate $ fbc (listArray (0,length ns) ns) h
 
 finishCandidate :: Candidate a -> ([a],[a],[a])
@@ -106,7 +109,7 @@ fbc' needles h = do
     let go :: [[a -> Bool]] -> [a] -> [([a],[a],[a])]
         go [] _      = []
         go (n:ns) h' = case findBestCandidate n h' of
-                            Nothing -> error "We didn't find one of the sublists in the big list!"
+                            Nothing -> go ns h'
                             Just p@(_m,_i,r) -> p:go ns r
     let (subM,subI,subR) = unzip3 $ go needles match
     return Result { subMatches = subM
@@ -115,18 +118,26 @@ fbc' needles h = do
                   , entireMatch = match
                   , entireInterference = interference }
 
+debug :: (Show a) => a -> a
+debug x = trace ("DEBUG: " ++ show x) x
+
+debug' :: (Show a) => String -> a -> a
+debug' s x = trace ("DEBUG: " ++ s ++ "\nDEBUG: " ++ show x) x
+
 -- | Returns a list of possible targets and the interference in the entire match, as well as the match
-findTarget :: (Eq a) => (a -> Bool) -> ([a],[a]) -> [a] -> Maybe (Prediction a)
-findTarget tP (left,right) text = do
-    result <- fbc' [map (==) left ,[tP] ,map (==) right] text
-    let tMatches = case subMatches result of
-                        (_:ts:_:[]) -> ts
-                        _           -> error "Something went catastrophically wrong!"
-        tRest    = case subRest result of
-                        (_:ts:_:[]) -> ts
-                        _          -> error "Something went even more catastrophically wrong!"
+findTarget :: (Eq a, Show a) => (a -> Bool) -> ([a],[a]) -> [a] -> Maybe (Prediction a)
+findTarget tP ctxt@(left,right) text = do
+    result <- fbc' [map (==) (debug left) ,[tP] ,map (==) (debug right)] text
+    let tMatches = extractTargets ctxt (subMatches result)
+        tRest    = extractTargets ctxt (subRest result)
     return Prediction { predPossibleTargets = filter tP (tMatches++tRest)
                       , predInterference = fiddleOutInterference result }
+
+extractTargets :: ([a],[a]) -> [[a]] -> [a]
+extractTargets ([],_) (ts:_:[]) = ts
+extractTargets (_,[]) (_:ts:[]) = ts
+extractTargets (a,b)  (_:ts:_:[]) | not (null a) && not (null b) = ts
+extractTargets _ _ = error "Something is catastrophically wrong!"
 
 fiddleOutInterference :: (Eq a) => Result a -> a -> Interference a
 fiddleOutInterference r =
