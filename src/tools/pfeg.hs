@@ -289,6 +289,7 @@ chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
 
 -- | Get sentence data structures of documents from the DB in batch.
 queryDB :: Connection -> [DocId] -> IO [Sentence Text]
+queryDB _ [] = return []
 queryDB conn ids = do
     let arg = (++")") . ('(':) . intercalate "," . map show $ ids
     sql <- liftIO $ quickQuery' conn ("SELECT pos,lemma,surface FROM records WHERE id in " ++ arg) []
