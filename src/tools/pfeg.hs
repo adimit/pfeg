@@ -138,7 +138,6 @@ matchF log i = do
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
         putStr "Querying…"
-        mapM_ print queries
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
         writeChan log $ QueryData i results time
         putStr "\r"
