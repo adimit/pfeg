@@ -131,6 +131,10 @@ generateItems fp = do
     let ig = getSentenceItems (`elem` T.words "auf in am")
     liftM concat $
         I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ I.convStream corpusI (I.joinI $ I.mapChunks ig I.getChunks))
+
+matchF :: QueryChan -> ItemProcessor_
+matchF log i = do
+    session <- ask
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
         putStr "Querying…"
