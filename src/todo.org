@@ -1,4 +1,5 @@
 * Done
+  - fix surface lemma switcheroo. done (23:36, Jul 20)
   - Re-enable logging of db actions
   + Log start and finish events for record
   + Move recordF to dbthread
@@ -12,12 +13,19 @@
     "@surface" <<< "@surface bla" which doesn't make sense. Remove the first surface and <<< in that case. (probably also in case the right context is empty) 00:12, Jul 20
   - fix sql syntax error 00:12, Jul 20
   - make a matcher test run 00:12, Jul 20
+  - We get a problem in findTarget if either left or right are [] 00:52, Jul 21
+  - fix bug in ShortestMatch (I guess the tests were leaky?) 00:52, Jul 21
+  - don't query on empty ids. 01:08, Jul 21
 * Doing
-  - we're not actually writing anything. Why so?
-  - it would be nice to visualize all the steps that happen during matching
 * To-Do
-  - it might make sense to put in beginning or end-of-sentence operators in case left or right contexts are empty.
+  - Maybe we do need a centralized logging thread after all?
   - fix config file pattern parsing mechanism. it currently only parses the first pattern
+  - Context ([],[einen,blick]) gives us prediction "von". WTH?
+  - we seem to not be writing anything when no match is found (i.e. check if
+    baseline matches are doing what they're supposed to be doing.)
+  - it would be nice to visualize all the steps that happen during matching
+  - it might make sense to put in beginning or end-of-sentence operators in
+    case left or right contexts are empty.
   - Find a way to utilize the dbthread for match mode, too.
   (use IO continuations which put the result in a return variable. like callbacks.)
 * Notes
