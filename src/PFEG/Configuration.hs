@@ -143,8 +143,15 @@ printConfig c =
     putStr $ "PFEG Configuration:\n" ++
              "\tMajority baseline: " ++ majorityBaseline c ++ "\n\
              \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
-             \\tPatterns: " ++ unwords (map show (matchPatterns c)) ++ "\n\
+             \\tPatterns: " ++ (unlines . addSpaces) (map (unwords . map show) (makeBits 3 $ matchPatterns c)) ++ "\n\
              \\t" ++ showMode (pfegMode c)
+    where addSpaces :: [String] -> [String]
+          addSpaces [] = []
+          addSpaces (h:t) = h:map ("\t          "++) t
+          makeBits :: Int -> [a] -> [[a]]
+          makeBits _ [] = []
+          makeBits n l  = let (h,t) = splitAt n l
+                          in h:makeBits n t
 
 showMode :: ModeConfig -> String
 showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
@@ -175,12 +182,13 @@ openHandle mode cfg sec opt = do
 
 getPatterns :: Config -> SectionName -> OptionName -> Configurator [Pat.MatchPattern]
 getPatterns cfg sec name = do
-    ps <- liftM (map T.unpack . splitAndStrip) $ getValue cfg sec name 
-    parseResults <- forM ps (liftM (Parsec.parse Pat.parsePattern "" . T.pack) . getValue cfg sec)
-    let (errs,pats) = partitionEithers parseResults
-    forM_ errs $ \err -> liftC (putStrLn $ "WARNING: " ++ show err)
-    return pats
-
+    pLocations <- liftM (map T.unpack . splitAndStrip) $ getValue cfg sec name
+    liftM concat (forM pLocations getPattern)
+    where getPattern n = do
+              ps <- liftM splitAndStrip (getValue cfg sec n)
+              let (errs,pats) = partitionEithers $ map (Parsec.parse Pat.parsePattern sec) ps
+              forM_ errs $ \err -> liftC (putStrLn $ "***\nWARNING: " ++ show err++"\n***")
+              return pats
 
 getCorpusSet :: Config -> SectionName -> OptionName -> Configurator [Corpus]
 getCorpusSet cfg sec opt = do
