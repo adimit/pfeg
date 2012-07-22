@@ -112,12 +112,12 @@ process session = do
           void $ workOnCorpora "record" tchan it session (0,[]) cs
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialMatchScore session)
+          void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialMatchScore session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF log chan)
           void $ workOnCorpora "match" tchan it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
+          void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialPredictScore session)
           let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF log chan)
           void $ workOnCorpora "predict" tchan it session () cs
     putStrLn "Waiting for DB…"
@@ -142,10 +142,10 @@ matchF log resLog i = do
     session <- ask
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
-        log $ LogItem "Queries" queries
+        log $ LogItem "Item" i
+        log $ LogItem "Queries" (zip (matchPatterns session) queries)
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
         log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-        log $ LogItem "Results" results
         writeChan resLog $ QueryData i results time
 
 querify :: Text -> PFEG st Query
@@ -208,13 +208,18 @@ getQueryResults result =
 type DocId = Int
 type DocMap = M.HashMap DocId (Text,Text)
 
-matchLogger :: Handle -> QueryChan -> PFEG Score ()
-matchLogger l c = do
+matchLogger :: Logger -> Handle -> QueryChan -> PFEG Score ()
+matchLogger log l c = do
     session <- ask
     (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
+    liftIO . log $ LogItem "Sentences from DB" (map showSentence sentences)
     let preds      = concatMap (getMatches (targets session) (matchPatterns session) $ snd item) sentences
         scoredData = scoreMatchData preds
         prediction = findBestPrediction (snd item) scoredData
+    liftIO $ do
+        log $ LogItem "Predictions" preds
+        log $ LogItem "Scored Predictions" scoredData
+        log $ Status $ T.intercalate " " ["Chose",renderLog prediction]
     newScore <- score (fmap fst prediction) item
     put $! newScore
     liftIO $ do forM_ (map (showScoredData item (totalScored newScore)) scoredData) (\line -> hPutStrLn l line >> hFlush l)
@@ -227,7 +232,7 @@ matchLogger l c = do
 debugLog :: Handle -> LogChan -> IO ()
 debugLog h c = do
     msg <- atomically $ readTChan c
-    hPrint h $ show msg
+    hPrint h msg
     hFlush h
 
 type LogChan = TChan LogMessage
@@ -240,11 +245,32 @@ data LogMessage = Status Text
                 | Warning Text
                 | Error Text
 
+instance RenderLog Pat.MatchData where
+    renderLog Pat.MatchData { Pat.predictedTarget = predT
+                            , Pat.interferingWords = _intW
+                            , Pat.matchPattern = mP } = T.unwords [surface predT,renderLog mP]
+
+instance RenderLog ScoredMatchData where
+    renderLog (p,(pat,s)) = T.unwords ["Prediction",p,"—","Pattern",renderLog pat,"Score",renderLog s]
+
+instance RenderLog Double where
+    renderLog = T.pack . show
+
+instance (RenderLog a) => RenderLog (Maybe a) where
+    renderLog Nothing = "nothing"
+    renderLog (Just a) = renderLog a
+
+instance RenderLog (Pat.MatchPattern,Query) where
+    renderLog (a,b) = T.unwords [renderLog a,renderLog b]
+
 instance Show LogMessage where
     show (Status t)    = "INFO: " ++ T.unpack t
     show (Warning t)   = "WARN: " ++ T.unpack t
     show (Error t)     = "ERR:  " ++ T.unpack t
     show (LogItem t i) = "*** " ++ T.unpack t ++":\n" ++ (T.unpack . renderLog $ i) ++  "\n***"
+
+instance RenderLog Text where
+    renderLog = id
 
 instance RenderLog (Sphinx.Result [QueryResult]) where
     renderLog (Sphinx.Ok r) = renderLog r
@@ -269,8 +295,11 @@ instance RenderLog (Context (Token Text)) where
 instance RenderLog Pat.MatchPattern where
     renderLog = T.pack . show
 
+showSentence :: Sentence Text -> Text
+showSentence = T.unwords . map surface
+
 instance (RenderLog a) => RenderLog [a] where
-    renderLog xs = wrap2 '[' ']' . T.intercalate "," . map renderLog $ xs
+    renderLog xs = wrap2 '[' ']' . T.intercalate "\n," . map renderLog $ xs
 
 instance RenderLog Query where
     renderLog = queryString
