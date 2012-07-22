@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
 import qualified Data.HashMap.Strict as M
@@ -102,6 +102,9 @@ process :: PFEGConfig -> IO ()
 process session = do
     tchan <- atomically $ newTBChan 2
     _dbthread_id <- forkIO $ dbthread (database session) tchan
+    dlchan <- atomically newTChan
+    _debLthread_id <- forkIO . forever $ debugLog (debugLogHandle session) dlchan
+    let log = atomically . writeTChan dlchan
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertSentence
@@ -110,12 +113,12 @@ process session = do
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialMatchScore session)
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF log chan)
           void $ workOnCorpora "match" tchan it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger l chan) initialPredictScore session)
-          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
+          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF log chan)
           void $ workOnCorpora "predict" tchan it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
@@ -132,15 +135,18 @@ generateItems fp = do
     liftM concat $
         I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ I.convStream corpusI (I.joinI $ I.mapChunks ig I.getChunks))
 
-matchF :: QueryChan -> ItemProcessor_
-matchF log i = do
+type Logger = LogMessage -> IO ()
+
+matchF :: Logger -> QueryChan -> ItemProcessor_
+matchF log resLog i = do
     session <- ask
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
-        putStr "Querying…"
+        log $ LogItem "Queries" queries
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-        writeChan log $ QueryData i results time
-        putStr "\r"
+        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
+        log $ LogItem "Results" results
+        writeChan resLog $ QueryData i results time
 
 querify :: Text -> PFEG st Query
 querify q = do index <- liftM sphinxIndex ask
@@ -188,7 +194,6 @@ score p i = do
        then return $ oldScore { scoreCorrect = scoreCorrect oldScore + 1, totalScored = totalScored oldScore + 1 }
        else return $ oldScore { totalScored = totalScored oldScore + 1 }
 
-
 bs :: LB.ByteString -> Text
 bs = decodeUtf8 . SB.concat . LB.toChunks
 
@@ -219,11 +224,56 @@ matchLogger l c = do
                            \S: " ++ show newScore ++ "\n\
                            \X: " ++ show (fmap snd prediction)
 
-prettyPrint :: Item Text -> String
-prettyPrint (t,ctxt) = T.unpack . T.unlines $
-    [ T.unwords ["\tTarget:",surface t]
-    , T.unwords $ "\tLeft Context:":map surface (left ctxt)
-    , T.unwords $ "\tRight Context:":map surface (right ctxt) ]
+debugLog :: Handle -> LogChan -> IO ()
+debugLog h c = do
+    msg <- atomically $ readTChan c
+    hPrint h $ show msg
+    hFlush h
+
+type LogChan = TChan LogMessage
+
+class RenderLog a where
+    renderLog :: a -> Text
+
+data LogMessage = Status Text
+                | forall a. RenderLog a => LogItem Text a
+                | Warning Text
+                | Error Text
+
+instance Show LogMessage where
+    show (Status t)    = "INFO: " ++ T.unpack t
+    show (Warning t)   = "WARN: " ++ T.unpack t
+    show (Error t)     = "ERR:  " ++ T.unpack t
+    show (LogItem t i) = "*** " ++ T.unpack t ++":\n" ++ (T.unpack . renderLog $ i) ++  "\n***"
+
+instance RenderLog (Sphinx.Result [QueryResult]) where
+    renderLog (Sphinx.Ok r) = renderLog r
+    renderLog (Sphinx.Warning w r) = T.unlines [T.concat ["SPHINX WARNING: ",T.pack (show w)],renderLog r]
+    renderLog (Sphinx.Error _ w) = T.concat ["SPHINX ERROR: ", T.pack (show w)]
+    renderLog (Sphinx.Retry w) = T.concat ["SPHINX RETRY: ", T.pack (show w)]
+
+instance RenderLog QueryResult where
+    renderLog qr = T.pack . groom $ qr
+
+instance RenderLog (Item Text) where
+    renderLog (t,Context l r) = T.unlines
+                   [ T.unwords ["Left context:",wrap '\'' (T.unwords (map surface l))]
+                   , T.unwords ["Target:",surface t]
+                   , T.unwords ["Right context:",wrap '\'' (T.unwords (map surface r))]]
+
+instance RenderLog (Context (Token Text)) where
+    renderLog (Context l r) =
+         T.unlines [ T.unwords ["Left context:",wrap '\'' (T.unwords (map surface l))]
+                   , T.unwords ["Right context:",wrap '\'' (T.unwords (map surface r))]]
+
+instance RenderLog Pat.MatchPattern where
+    renderLog = T.pack . show
+
+instance (RenderLog a) => RenderLog [a] where
+    renderLog xs = wrap2 '[' ']' . T.intercalate "," . map renderLog $ xs
+
+instance RenderLog Query where
+    renderLog = queryString
 
 showScoredData :: Item Text -> Int -> ScoredMatchData -> String
 showScoredData (t',ctxt) i (t,(p,s)) = intercalate "\t"

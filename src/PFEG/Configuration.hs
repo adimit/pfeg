@@ -40,14 +40,15 @@ type Name = String
 type Corpus = (Name,FilePath)
 
 data PFEGConfig = PFEGConfig
-    { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
-    , statusLine :: Chan Int -- ^ Status update channel
-    , database   :: Connection -- ^ The connection to the main database
-    , targets    :: [Text] -- ^ Targets for this run
+    { pfegMode         :: ModeConfig -- ^ Program mode specific configuration
+    , statusLine       :: Chan Int -- ^ Status update channel
+    , debugLogHandle   :: Handle -- ^ Debugging log file
+    , database         :: Connection -- ^ The connection to the main database
+    , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: String
-    , sphinxIndex :: String
-    , chunkSize  :: Int -- ^ Chunk size for the Iteratee
-    , matchPatterns :: [Pat.MatchPattern] }
+    , sphinxIndex      :: String
+    , chunkSize        :: Int -- ^ Chunk size for the Iteratee
+    , matchPatterns    :: [Pat.MatchPattern] }
 
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
@@ -103,6 +104,7 @@ initialize modeString cfg = do
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
     majB  <- getValue cfg "main" "majorityBaseline"
+    debL  <- openHandle AppendMode cfg "main" "debugLog"
     mode <- detectMode modeString
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
@@ -129,6 +131,7 @@ initialize modeString cfg = do
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
+                            , debugLogHandle   = debL
                             , sphinxIndex      = sindex
                             , targets          = targs
                             , majorityBaseline = majB
