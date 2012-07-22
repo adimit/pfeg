@@ -144,7 +144,7 @@ printConfig c =
              "\tMajority baseline: " ++ majorityBaseline c ++ "\n\
              \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
              \\tPatterns: " ++ unwords (map show (matchPatterns c)) ++ "\n\
-             \t\n" ++ showMode (pfegMode c)
+             \\t" ++ showMode (pfegMode c)
 
 showMode :: ModeConfig -> String
 showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
