@@ -16,18 +16,29 @@
   - We get a problem in findTarget if either left or right are [] 00:52, Jul 21
   - fix bug in ShortestMatch (I guess the tests were leaky?) 00:52, Jul 21
   - don't query on empty ids. 01:08, Jul 21
+  - fix config file pattern parsing mechanism. it currently only parses the first pattern
+  - logger: properly print newlines.
+  - logger: only log docids for the query results
+  - logger: the item doesn't seem to get logged?
+  - logger: pair the actual sent queries with the match pattern
+  - it would be nice to visualize all the steps that happen during matching
+  - Maybe we do need a centralized logging thread after all?
 * Doing
 * To-Do
-  - Maybe we do need a centralized logging thread after all?
-  - fix config file pattern parsing mechanism. it currently only parses the first pattern
+  - analyse the log. We seme to get weird predictions sometimes
+  - the lemma patterns really suck, and they seem to be *preferred*, which is
+    wrong. What's going on?
+  - on (or after) item 485 we get Something is catastrophically wrong again.
   - Context ([],[einen,blick]) gives us prediction "von". WTH?
   - we seem to not be writing anything when no match is found (i.e. check if
     baseline matches are doing what they're supposed to be doing.)
-  - it would be nice to visualize all the steps that happen during matching
   - it might make sense to put in beginning or end-of-sentence operators in
     case left or right contexts are empty.
   - Find a way to utilize the dbthread for match mode, too.
-  (use IO continuations which put the result in a return variable. like callbacks.)
+    (use IO continuations which put the result in a return variable. like callbacks.)
+  - increase the amount of sentences we're fetching
+  - refactor pfeg.hs. Too much stuff in one  file
+  - ideally, PFEG monad would be in STM, not in IO
 * Notes
 ** Search Engine
 *** Stopwords
