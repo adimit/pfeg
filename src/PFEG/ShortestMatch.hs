@@ -9,8 +9,6 @@ import Control.Monad.ST
 
 import Prelude hiding (all)
 
-import Debug.Trace
-
 data Candidate a = Candidate { candSize :: Int
                              , candIndex :: Int
                              , candMatch :: [a] -> [a]
@@ -118,16 +116,10 @@ fbc' needles h = do
                   , entireMatch = match
                   , entireInterference = interference }
 
-debug :: (Show a) => a -> a
-debug x = trace ("DEBUG: " ++ show x) x
-
-debug' :: (Show a) => String -> a -> a
-debug' s x = trace ("DEBUG: " ++ s ++ "\nDEBUG: " ++ show x) x
-
 -- | Returns a list of possible targets and the interference in the entire match, as well as the match
 findTarget :: (Eq a, Show a) => (a -> Bool) -> ([a],[a]) -> [a] -> Maybe (Prediction a)
 findTarget tP ctxt@(left,right) text = do
-    result <- fbc' [map (==) (debug left) ,[tP] ,map (==) (debug right)] text
+    result <- fbc' [map (==) left ,[tP] ,map (==) right] text
     let tMatches = extractTargets ctxt (subMatches result)
         tRest    = extractTargets ctxt (subRest result)
     return Prediction { predPossibleTargets = filter tP (tMatches++tRest)
