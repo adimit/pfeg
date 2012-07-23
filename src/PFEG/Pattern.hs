@@ -98,9 +98,14 @@ retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)
 
 matchParser :: MatchPattern -> [Text] -> Context (Token Text) -> Sentence Text -> [MatchData]
 matchParser p targets cxt' s =
-    let cxt = (C.restrictContext (patternRestriction p) cxt')
-        prediction = findTarget ((`elem` targets).surface) (C.left cxt, C.right cxt) s
+    let eqR a b = selectLevel p a == selectLevel p b
+        cxt = (C.restrictContext (patternRestriction p) cxt')
+        prediction = findTarget eqR ((`elem` targets).surface) (C.left cxt, C.right cxt) s
     in  maybe [] (pred2match p) prediction
+
+selectLevel :: MatchPattern -> Token Text -> Text
+selectLevel MatchPattern { level = Lemma } s = lemma s
+selectLevel MatchPattern { level = Surface } s = surface s
 
 pred2match :: MatchPattern -> Prediction (Token Text) -> [MatchData]
 pred2match p (Prediction possT f_inter) = map (\t -> MatchData t (f_inter t) p) possT

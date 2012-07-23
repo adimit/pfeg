@@ -117,9 +117,9 @@ fbc' needles h = do
                   , entireInterference = interference }
 
 -- | Returns a list of possible targets and the interference in the entire match, as well as the match
-findTarget :: (Eq a, Show a) => (a -> Bool) -> ([a],[a]) -> [a] -> Maybe (Prediction a)
-findTarget tP ctxt@(left,right) text = do
-    result <- fbc' [map (==) left ,[tP] ,map (==) right] text
+findTarget :: (Eq a, Show a) => (a -> a -> Bool) -> (a -> Bool) -> ([a],[a]) -> [a] -> Maybe (Prediction a)
+findTarget eqR tP ctxt@(left,right) text = do
+    result <- fbc' [map eqR left ,[tP] ,map eqR right] text
     let tMatches = extractTargets ctxt (subMatches result)
         tRest    = extractTargets ctxt (subRest result)
     return Prediction { predPossibleTargets = filter tP (tMatches++tRest)

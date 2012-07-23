@@ -5,7 +5,7 @@
   + Move recordF to dbthread
   - Find out what we're doing
   - Find a way to disable incremental commits in mysql and instead commit in
-  the end (a specialized DBAction Commit would be spiffy)
+    the end (a specialized DBAction Commit would be spiffy)
   - see if we can ditch the cmd TMVar and just peek into TBChan's size
   - Populate the db with record 12:53, Jul 19
   - debug that read timeout during indexing. Increase mysql tolerance or so. dunno. 12:53, Jul 19
@@ -25,8 +25,14 @@
   - Maybe we do need a centralized logging thread after all?
   - items in debug log aren't in order. 14:22, Jul 23
   - also print docids to log 14:22, Jul 23
+  - docid/sentence pairings seem to be wrong 14:59, Jul 23
+  - "forum für politische" doesn't give us any predictions, which
+    doesn't seem right: PFEG.Pattern is instructing PFEG.ShortestMatch
+    to use equality comparisons on the entire Token, which will
+    naturally fail when we want only lemma matches. Need to fix that.
+  - fix PFEG.Pattern to only use lemma or surface depending on the
+    MatchPattern it was given
 * Doing
-  - "forum für politische" doesn't give us any predictions, which doesn't seem right
 * To-Do
   - add targets into the search. Wouldn't that slow us down a lot?
   - analyse the log. We seme to get weird predictions sometimes
