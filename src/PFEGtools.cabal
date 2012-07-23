@@ -32,7 +32,7 @@ Executable pfeg
                    , convertible
                    , old-locale == 1.0.*
                    , attoparsec-iteratee
-                   , transformers < 0.3
+                   , transformers
                    , safe
                    , unordered-containers
                    , MonadCatchIO-transformers
