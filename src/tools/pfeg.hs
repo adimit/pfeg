@@ -330,7 +330,7 @@ type ScoredMatchData = (Text,(Pat.MatchPattern,Double))
 
 findBestPrediction :: Context (Token Text) -> [ScoredMatchData] -> Maybe ScoredMatchData
 findBestPrediction _ =
-    listToMaybe . sortBy (compare `on` (snd . snd)) . M.toList . M.fromListWith addWeights
+    listToMaybe . sortBy (flip compare `on` (snd . snd)) . M.toList . M.fromListWith addWeights
     where addWeights (p,x) (_,y) = (p, x + y)
 
 scoreMatchData :: [Pat.MatchData] -> [ScoredMatchData]
