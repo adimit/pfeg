@@ -211,8 +211,8 @@ retrieveSentences conn response = do
     let (results,msg) = getQueryResults response
         docids = unique . concatMap parseResult $ results
     when (isJust msg) $ putStrLn $ "WARNING: " ++ (T.unpack . fromJust $ msg)
-    sentences <- queryDB conn docids
-    return (docids,sentences)
+    ids'n'sentences <- queryDB conn docids
+    return $ unzip ids'n'sentences
 
 matchLogger :: Logger -> Handle -> QueryChan -> PFEG Score ()
 matchLogger log l c = do
@@ -380,17 +380,17 @@ chooseSide q d | "@lemma" `T.isPrefixOf` q = map snd d
                | otherwise                 = map fst d
 
 -- | Get sentence data structures of documents from the DB in batch.
-queryDB :: Connection -> [DocId] -> IO [Sentence Text]
+queryDB :: Connection -> [DocId] -> IO [(DocId,Sentence Text)]
 queryDB _ [] = return []
 queryDB conn ids = do
     let arg = (++")") . ('(':) . intercalate "," . map show $ ids
-    sql <- liftIO $ quickQuery' conn ("SELECT pos,lemma,surface FROM records WHERE id in " ++ arg) []
+    sql <- liftIO $ quickQuery' conn ("SELECT id,pos,lemma,surface FROM records WHERE id in " ++ arg) []
     return $ map mkSentence sql
-    where mkSentence :: [SqlValue] -> Sentence Text
+    where mkSentence :: [SqlValue] -> (DocId,Sentence Text)
           -- The reason we're using the explicit Word record syntax here is to never mix up surface, pos, and lemma
           -- as this can lead to embarrassing and difficult to detect bugs.
-          mkSentence (s:l:p:[]) = zipWith3 (\s' l' p' -> Word { pos = p', lemma = l', surface = s' })
-                                  (sqlw p) (sqlw l) (sqlw s)
+          mkSentence (i:s:l:p:[]) = (fromSql i,zipWith3 (\s' l' p' -> Word { pos = p', lemma = l', surface = s' })
+                                    (sqlw p) (sqlw l) (sqlw s))
           mkSentence x          = error $ "SQL reply not in the right format:\n" ++ groom x
           sqlw :: SqlValue -> [Text]
           sqlw = T.words . fromSql
