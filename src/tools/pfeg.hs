@@ -113,12 +113,12 @@ process session = do
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialMatchScore session)
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF log chan)
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
           void $ workOnCorpora "match" tchan it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialPredictScore session)
-          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF log chan)
+          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
           void $ workOnCorpora "predict" tchan it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
@@ -137,16 +137,13 @@ generateItems fp = do
 
 type Logger = LogMessage -> IO ()
 
-matchF :: Logger -> QueryChan -> ItemProcessor_
-matchF log resLog i = do
+matchF :: QueryChan -> ItemProcessor_
+matchF resLog i = do
     session <- ask
     queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
     liftIO $ do
-        log $ LogItem "Item" i
-        log $ LogItem "Queries" (zip (matchPatterns session) queries)
         (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-        writeChan resLog $ QueryData i results time
+        writeChan resLog $ QueryData i results queries time 
 
 querify :: Text -> PFEG st Query
 querify q = do index <- liftM sphinxIndex ask
@@ -157,6 +154,7 @@ type QueryChan = Chan QueryData
 data QueryData = QueryData
     { qItem    :: !(Item Text)
     , qResults :: !(Sphinx.Result [QueryResult])
+    , qQueries :: ![Query]
     , qTime    :: !NominalDiffTime }
     deriving (Show)
 
@@ -208,15 +206,27 @@ getQueryResults result =
 type DocId = Int
 type DocMap = M.HashMap DocId (Text,Text)
 
+retrieveSentences :: Connection -> Sphinx.Result [QueryResult] -> IO ([DocId], [Sentence Text])
+retrieveSentences conn response = do
+    let (results,msg) = getQueryResults response
+        docids = unique . concatMap parseResult $ results
+    when (isJust msg) $ putStrLn $ "WARNING: " ++ (T.unpack . fromJust $ msg)
+    sentences <- queryDB conn docids
+    return (docids,sentences)
+
 matchLogger :: Logger -> Handle -> QueryChan -> PFEG Score ()
 matchLogger log l c = do
     session <- ask
-    (item,time,sentences) <- liftIO $ retrieveSentences (database session) c
-    liftIO . log $ LogItem "Sentences from DB" (map showSentence sentences)
+    (QueryData item response queries time) <- liftIO $ readChan c
+    (docids,sentences) <- liftIO $ retrieveSentences (database session) response
     let preds      = concatMap (getMatches (targets session) (matchPatterns session) $ snd item) sentences
         scoredData = scoreMatchData preds
         prediction = findBestPrediction (snd item) scoredData
     liftIO $ do
+        log $ LogItem "Item" item
+        log $ LogItem "Queries" (zip (matchPatterns session) queries)
+        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
+        log $ LogItem "Sentences from DB" (zip docids sentences)
         log $ LogItem "Predictions" preds
         log $ LogItem "Scored Predictions" scoredData
         log $ Status $ T.intercalate " " ["Chose",renderLog prediction]
@@ -272,6 +282,12 @@ instance Show LogMessage where
 instance RenderLog Text where
     renderLog = id
 
+instance RenderLog (DocId,Sentence Text) where
+    renderLog (i,s) = T.concat [renderLog i, ": ", showSentence s]
+
+instance RenderLog Int where
+    renderLog = T.pack . show
+
 instance RenderLog (Sphinx.Result [QueryResult]) where
     renderLog (Sphinx.Ok r) = renderLog r
     renderLog (Sphinx.Warning w r) = T.unlines [T.concat ["SPHINX WARNING: ",T.pack (show w)],renderLog r]
@@ -316,15 +332,6 @@ showScoredData (t',ctxt) i (t,(p,s)) = intercalate "\t"
 
 getMatches :: [Text] -> [Pat.MatchPattern] -> Context (Token Text) -> Sentence Text -> [Pat.MatchData]
 getMatches trgs pats c s = concatMap (\p -> Pat.matchParser p trgs c s) pats
-
-retrieveSentences :: Connection -> QueryChan -> IO (Item Text, NominalDiffTime, [Sentence Text])
-retrieveSentences conn c = do
-    (QueryData item response time) <- readChan c
-    let (results,msg) = getQueryResults response
-        docids = map parseResult results
-    when (isJust msg) $ putStrLn $ "WARNING: " ++ (T.unpack . fromJust $ msg)
-    sentences <- queryDB conn . unique . concat $ docids
-    return (item,time,sentences)
 
 type ScoredMatchData = (Text,(Pat.MatchPattern,Double))
 

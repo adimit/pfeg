@@ -23,10 +23,16 @@
   - logger: pair the actual sent queries with the match pattern
   - it would be nice to visualize all the steps that happen during matching
   - Maybe we do need a centralized logging thread after all?
+  - items in debug log aren't in order. 14:22, Jul 23
+  - also print docids to log 14:22, Jul 23
 * Doing
+  - "forum für politische" doesn't give us any predictions, which doesn't seem right
 * To-Do
+  - add targets into the search. Wouldn't that slow us down a lot?
   - analyse the log. We seme to get weird predictions sometimes
   - the lemma patterns really suck, and they seem to be *preferred*, which is
+  - lemma uses @card@ in the queries, but we probably can't look for that!
+  - we're definitely not handling baseline right
     wrong. What's going on?
   - on (or after) item 485 we get Something is catastrophically wrong again.
   - Context ([],[einen,blick]) gives us prediction "von". WTH?
@@ -39,6 +45,7 @@
   - increase the amount of sentences we're fetching
   - refactor pfeg.hs. Too much stuff in one  file
   - ideally, PFEG monad would be in STM, not in IO
+  - download the english wac corpus
 * Notes
 ** Search Engine
 *** Stopwords
