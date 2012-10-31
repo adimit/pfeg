@@ -198,10 +198,10 @@ bs = decodeUtf8 . SB.concat . LB.toChunks
 getQueryResults :: Sphinx.Result [a] -> ([a],Maybe Text)
 getQueryResults result =
     case result of
-         (Sphinx.Warning warn a) -> (a, Just $ T.concat ["WARNING: ", bs warn])
+         (Sphinx.Warning warn a) -> (a, Just $ T.concat ["WARNING: ", warn])
          (Sphinx.Ok a)           -> (a, Nothing)
-         (Sphinx.Error code msg) -> ([], Just $ T.concat["ERROR (",T.pack . show $ code,"): ", bs msg])
-         (Sphinx.Retry msg)      -> ([], Just $ T.concat["RETRY: ", bs msg])
+         (Sphinx.Error code msg) -> ([], Just $ T.concat["ERROR (",T.pack . show $ code,"): ", msg])
+         (Sphinx.Retry msg)      -> ([], Just $ T.concat["RETRY: ", msg])
 
 type DocId = Int
 type DocMap = M.HashMap DocId (Text,Text)
@@ -223,12 +223,12 @@ matchLogger log l c = do
         scoredData = scoreMatchData preds
         prediction = findBestPrediction (snd item) scoredData
     liftIO $ do
-        log $ LogItem "Item" item
+        log $ LogItem (T.concat["Item: ", surface . fst $ item]) item
         log $ LogItem "Queries" (zip (matchPatterns session) queries)
-        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
         log $ LogItem "Sentences from DB" (zip docids sentences)
         log $ LogItem "Predictions" preds
         log $ LogItem "Scored Predictions" scoredData
+        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
         log $ Status $ T.intercalate " " ["Chose",renderLog prediction]
     newScore <- score (fmap fst prediction) item
     put $! newScore
