@@ -71,15 +71,6 @@ renderS = renderSecs.round
 normalize :: Text -> Text
 normalize = ensureNotEmpty . filterPoop . X.toCaseFold
 
-delimiter :: Parser ByteString
-delimiter = A.string $ B.pack "-*-"
-
-originalMarker :: Text
-originalMarker = X.pack "ORG"
-
-nullToken :: Text
-nullToken = X.pack "NIX"
-
 ensureNotEmpty :: Text -> Text
 ensureNotEmpty t | t == X.empty = nullToken
                  | otherwise   = t
