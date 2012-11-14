@@ -87,6 +87,28 @@ While the data in the DEWAC corpus can be noisy, avoiding data sparsity
 problems seemed paramount, which justifies using the bigger DEWAC
 corpus over smaller, less noisy corpora.
 
+\subsection{On the Corpus}
+
+\paragraph{Duplicates} For the results of an experiment to be meaningful,
+testing and training data have to be distinct. In this particular experiment,
+however, sentences from the training corpus may naturally occur in the testing
+corpus, especially short ones. % FIXME: Maybe make a zipf-style statistic about
+% sentences in DEWAC
+Meanwhile, we are above all interested in the performance of
+the algorithm on \emph{unseen} data, which is why care was taken to exclude
+verbatim duplicates of sentences from the scoring.
+
+To each sentence the software assigned a 60 bit \textsc{sha-1} hash. During
+recording, a sentence and its hash was committed to the database iff its hash
+was not already known. During matching, sentences whose hash was already known
+were skipped and not counted in the sum totals of sentences considered.
+
+% FIXME: do we need to eliminate noise at all? Why not just run it like that?
+\paragraph{Noise} The WAC corpora are, by their nature, rather noisy corpora.
+They include a lot of urls, and other tokens which are not words, as well as
+``sentences'' which are the product of mistaking e.g.\ a menu or footer of a
+website for text.
+
 \subsection{Engineering the Software}
 The size of the corpus and the quality of its data pose some engineering
 challenges that the software had to overcome. The exploratory nature of the
@@ -99,6 +121,7 @@ takes around two days.  The resulting data size is close to the original size of
 the corpus (around 20 GiB.) What constricts the processing speed is mostly hard
 drive access, since the databases can grow rather large.
 
+% FIXME: Unnecessary fluff:
 The database used is SQLite\footnote{\url{http://www.sqlite.org}}, which was chosen for its
 simplicity and relatively good performance. The software is written
 in the highly parallelizable functional programming language
