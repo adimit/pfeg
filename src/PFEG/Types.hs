@@ -9,6 +9,7 @@ module PFEG.Types
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
 
+-- | A Sentence is a list of tokens.
 type Sentence a = [Token a]
 
 -- | Produce a "word" @Token@ which has the same data in all three fields.
@@ -16,6 +17,7 @@ type Sentence a = [Token a]
 nonWord :: a -> Token a
 nonWord x = Word x x x 
 
+-- | Represents either a normal word token, or a masked one.
 data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
              | Masked { pos :: !a
                       , lemma :: !a

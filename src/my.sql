@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS pfeg_de.log
     , version VARCHAR(10)
     , corpusname VARCHAR(20)
     , corpusfile VARCHAR(200)
-    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci ENGINE=InnoDB;;
+    ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci ENGINE=InnoDB;

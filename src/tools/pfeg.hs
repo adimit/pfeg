@@ -7,6 +7,8 @@ import Data.Nullable
 import Data.NullPoint
 import qualified Data.HashMap.Strict as M
 import Data.Time.Clock (getCurrentTime,NominalDiffTime)
+import Data.Time.Format
+import Data.Time.LocalTime
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
 import Text.Search.Sphinx hiding (sortBy,mode)
@@ -82,7 +84,9 @@ dbthread conn chan = go
           perform (Log event (name,fp)) = do
               logStatement <- prepare conn insertAction
               t <- getCurrentTime
-              void $ execute logStatement [toSql event, toSql name, toSql fp, toSql t]
+              tz <- getCurrentTimeZone
+              let t' = formatTime defaultTimeLocale "%Y-%B-%d" $ utcToLocalTime tz t
+              void $ execute logStatement [toSql event, toSql name, toSql fp, toSql t']
 
 main :: IO ()
 main = do
@@ -151,7 +155,7 @@ matchF resLog i = do
 
 querify :: Text -> PFEG st Query
 querify q = do index <- liftM sphinxIndex ask
-               return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
+               return Query { queryString = q, queryIndexes = T.pack index, queryComment = T.empty }
 
 type QueryChan = Chan QueryData
 
@@ -360,7 +364,7 @@ unique = Set.toList . Set.fromList
 
 -- | Retrieve excerpts from the Sphinx server.
 getEx :: ExcerptConfiguration -> String -> [Text] -> Text -> IO ([Text], Maybe Text)
-getEx ec index docs qry = liftM getQueryResults $ buildExcerpts ec docs index qry
+getEx ec index docs qry = liftM getQueryResults $ buildExcerpts ec docs (T.pack index) qry
 
 -- | Count elements in a list
 count :: (Hashable a, Eq a, Num b, Ord b) => [a] -> [(a,b)]
