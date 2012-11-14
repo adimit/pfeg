@@ -1,6 +1,10 @@
 {-# LANGUAGE FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
+import Data.Text.ICU.Convert
+import System.Locale
+import Data.Nullable
+import Data.NullPoint
 import qualified Data.HashMap.Strict as M
 import Data.Time.Clock (getCurrentTime,NominalDiffTime)
 import qualified Text.Search.Sphinx.Types as Sphinx
@@ -107,19 +111,19 @@ process session = do
     let log = atomically . writeTChan dlchan
     case pfegMode session of
         Record{ corpora = cs } -> do
-          s <- prepare (database session) insertSentence
-          let it = sentenceIteratee (recordF tchan s)
-          void $ workOnCorpora "record" tchan it session (0,[]) cs
+          s <- prepare (database session) insertText
+          let it = documentIteratee (recordDocsF tchan s)
+          workOnCorpora "record" tchan documentI it session () cs
         Match{ corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialMatchScore session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
-          void $ workOnCorpora "match" tchan it session () cs
+          workOnCorpora "match" tchan corpusI it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialPredictScore session)
           let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
-          void $ workOnCorpora "predict" tchan it session () cs
+          workOnCorpora "predict" tchan corpusI it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
     atomically $ do
@@ -129,11 +133,11 @@ process session = do
               dbthreadIsDone _ = False
 
 -- | debugging function for the REPL
-generateItems :: FilePath -> IO [Item Text]
-generateItems fp = do
+generateItems :: Converter -> FilePath -> IO [Item Text]
+generateItems conv fp = do
     let ig = getSentenceItems (`elem` T.words "auf in am")
     liftM concat $
-        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ I.convStream corpusI (I.joinI $ I.mapChunks ig I.getChunks))
+        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream corpusI) (I.joinI $ I.mapChunks ig I.getChunks))
 
 type Logger = LogMessage -> IO ()
 
@@ -476,20 +480,20 @@ wrap c = wrap2 c c
 wrap2 :: Char -> Char -> Text -> Text
 wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 
-workOnCorpora :: Text -> TBChan DBAction -> I.Iteratee (Sentence Text) (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO [st]
-workOnCorpora action tchan it session st = mapM $ \ c@(cName,cFile) -> do
+workOnCorpora :: Nullable a => Text -> TBChan DBAction -> I.Iteratee Text (PFEG st) a -> I.Iteratee a (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO ()
+workOnCorpora action tchan it1 it2 session st = mapM_ $ \ c@(cName,cFile) -> do
     (threadID,logVar) <- evalPFEG (forkLogger c) () session
     let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
-                 [ countChunksI logVar , I.joinI $ I.convStream corpusI it ])
+                   [ countChunksI logVar
+                   , I.mapChunks (toUnicode (corpusConverter session)) I.><> I.convStream it1 I.=$ it2])
     -- log to db that we're starting here
     atomically $ writeTBChan tchan (Log (T.unwords [action,"start"]) c)
-    res <- execPFEG iteratee st session
+    _ <- execPFEG iteratee st session
     killThread threadID
     putStrLn $ "Finished " ++ cName
     -- log to db that we're finished here and commit
     atomically $ do writeTBChan tchan (Log (T.unwords [action,"end"]) c)
                     writeTBChan tchan Commit
-    return res
 
 recorder :: Statement -> MVar RecordData -> MVar () -> IO ()
 recorder s mvar cmd = do
@@ -499,6 +503,10 @@ recorder s mvar cmd = do
     putMVar cmd ()
 
 type RecordData = [[SqlValue]]
+
+recordDocsF :: TBChan DBAction -> Statement -> DocumentProcessor_
+recordDocsF chan stmt doc = liftIO $ atomically (writeTBChan chan (DBWrite stmt [vals]))
+    where vals = document2SQL doc
 
 recordF :: TBChan DBAction -> Statement -> SentenceProcessor (Int, RecordData)
 recordF chan stmt s = do
@@ -513,6 +521,18 @@ itemIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
 
 sentenceIteratee :: SentenceProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
 sentenceIteratee = I.mapChunksM_
+
+documentIteratee :: DocumentProcessor st -> Iteratee (Document Text) (PFEG st) ()
+documentIteratee = I.mapChunksM_
+
+instance Nullable Text where
+    nullC = T.null
+
+instance NullPoint Text where
+    empty = T.empty
+
+type DocumentProcessor st = Document Text -> PFEG st ()
+type DocumentProcessor_ = DocumentProcessor ()
 
 type SentenceProcessor st = Sentence Text -> PFEG st ()
 type SentenceProcessor_   = SentenceProcessor ()

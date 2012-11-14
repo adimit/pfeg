@@ -2,6 +2,7 @@
 module PFEG.Types
     ( Sentence
     , Token(..)
+    , Document
     , nonWord
     ) where
 
@@ -21,3 +22,6 @@ data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
                       , surface :: !a
                       , original :: !a
                       , alternatives :: ![a] } deriving (Show,Functor,Traversable,Foldable,Eq)
+
+-- | Represents a WAC document.
+type Document a = [Sentence a]

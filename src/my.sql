@@ -2,7 +2,6 @@ CREATE TABLE IF NOT EXISTS pfeg_de.records
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
     , surface TEXT
     , lemma TEXT
-    , pos TEXT
     ) DEFAULT CHARACTER SET = utf8 DEFAULT COLLATE = utf8_general_ci ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS pfeg_de.log

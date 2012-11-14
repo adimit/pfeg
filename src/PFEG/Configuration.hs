@@ -24,6 +24,7 @@ import qualified Text.Search.Sphinx.ExcerptConfiguration as Ex
 import qualified PFEG.Pattern as Pat
 import Data.Either
 import qualified Text.Parsec as Parsec
+import Data.Text.ICU.Convert
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -44,6 +45,7 @@ data PFEGConfig = PFEGConfig
     , statusLine       :: Chan Int -- ^ Status update channel
     , debugLogHandle   :: Handle -- ^ Debugging log file
     , database         :: Connection -- ^ The connection to the main database
+    , corpusConverter  :: Converter -- ^ Text.ICU input encoding converter
     , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: String
     , sphinxIndex      :: String
@@ -109,6 +111,8 @@ initialize modeString cfg = do
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
     sindex <- getValue cfg "sphinx" "index"
+    encoding <- getValue cfg "data" "encoding"
+    conv <- liftC $ open encoding Nothing
     pats <- getPatterns cfg "patterns" "patterns"
     runas <- case mode of
       RunMatch -> do
@@ -134,6 +138,7 @@ initialize modeString cfg = do
                             , debugLogHandle   = debL
                             , sphinxIndex      = sindex
                             , targets          = targs
+                            , corpusConverter  = conv
                             , majorityBaseline = majB
                             , matchPatterns    = pats
                             , chunkSize        = csize }
