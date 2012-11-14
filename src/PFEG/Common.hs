@@ -70,11 +70,11 @@ normalize :: Text -> Text
 normalize = filterPoop . X.toCaseFold
 
 filterPoop :: Text -> Text
-filterPoop = X.filter (not.(`elem` "\"}{)([],"))
+filterPoop x | x `elem` [".","?","!"] = x 
+             | otherwise = X.filter (`elem` ['a'..'z'] ++ "äöüß-.") x
 
 documentP :: Parser (Document Text)
-documentP = textURLP *> sentenceP `A.manyTill` A.string "</text>\n"
-
+documentP = liftM (filter (not.null)) $ textURLP *> sentenceP `A.manyTill` A.string "</text>\n"
 textURLP :: Parser Text
 textURLP = "<text id=\"" A..*> A.takeWhile (/= '"') A.<*. "\">\n"
 
@@ -86,14 +86,16 @@ sentenceP = do
 
 wordP :: Parser (Maybe (Token Text))
 wordP = do
-    s <- A.takeWhile (/= '\t') <* A.char '\t'
+    s <- liftM normalize $ A.takeWhile (/= '\t') <* A.char '\t'
     p <- A.takeWhile (/= '\t') <* A.char '\t'
-    l <- A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
+    l <- liftM normalize $ A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
     let w = Word { pos = p, surface = s, lemma = l }
     return $! if wordIsOK w then Just w else Nothing
 
 wordIsOK :: Token Text -> Bool
-wordIsOK = const True
+wordIsOK Word { surface = s } | X.null s = False
+                              | X.any (=='.') $ X.init s = False
+wordIsOK _ = True
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a
