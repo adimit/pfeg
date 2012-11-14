@@ -3,8 +3,6 @@ module Main where
 
 import Data.Text.ICU.Convert
 import System.Locale
-import Data.Nullable
-import Data.NullPoint
 import qualified Data.HashMap.Strict as M
 import Data.Time.Clock (getCurrentTime,NominalDiffTime)
 import Data.Time.Format
@@ -38,7 +36,6 @@ import Data.Iteratee.IO
 import System.IO
 
 import qualified Data.Text as T
-import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 
 import Control.Concurrent.MVar
@@ -528,12 +525,6 @@ sentenceIteratee = I.mapChunksM_
 
 documentIteratee :: DocumentProcessor st -> Iteratee (Document Text) (PFEG st) ()
 documentIteratee = I.mapChunksM_
-
-instance Nullable Text where
-    nullC = T.null
-
-instance NullPoint Text where
-    empty = T.empty
 
 type DocumentProcessor st = Document Text -> PFEG st ()
 type DocumentProcessor_ = DocumentProcessor ()

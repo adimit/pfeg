@@ -20,8 +20,12 @@ module PFEG.Common
       -- * Misc
     , restrictContextToPattern
     , modify'
+      -- * Orphan Nullable instances for Text
+    , Text
     ) where
 
+import Data.Nullable
+import Data.NullPoint
 import Data.Typeable
 import Control.Exception
 import PFEG.Pattern
@@ -49,6 +53,12 @@ import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
+
+instance Nullable Text where
+    nullC = X.null
+
+instance NullPoint Text where
+    empty = X.empty
 
 restrictContextToPattern :: MatchPattern -> Context a -> Context a
 restrictContextToPattern p = restrictContext (patternRestriction p)
