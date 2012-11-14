@@ -6,7 +6,6 @@ module PFEG.Common
     , renderS
     , logger
       -- * Attoparsec parsers for the WAC "XML" corpora
-    , tokenP
     , sentenceP
     , documentP
       -- * Triplet operations
@@ -20,7 +19,6 @@ module PFEG.Common
     , ParseError(..)
       -- * Misc
     , restrictContextToPattern
-    , nullToken
     , modify'
     ) where
 
@@ -69,11 +67,7 @@ renderS :: NominalDiffTime -> String
 renderS = renderSecs.round
 
 normalize :: Text -> Text
-normalize = ensureNotEmpty . filterPoop . X.toCaseFold
-
-ensureNotEmpty :: Text -> Text
-ensureNotEmpty t | t == X.empty = nullToken
-                 | otherwise   = t
+normalize = filterPoop . X.toCaseFold
 
 filterPoop :: Text -> Text
 filterPoop = X.filter (not.(`elem` "\"}{)([],"))
