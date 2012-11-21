@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns, DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns, DeriveDataTypeable #-}
 module PFEG.Common
     ( -- * Measuring execution times and logging
       doTimed
@@ -14,7 +14,6 @@ module PFEG.Common
     , trd3
       -- * Shared iteratees
     , countChunksI
-    , corpusI
     , documentI
     , ParseError(..)
       -- * Misc
@@ -118,9 +117,6 @@ snd3    (_,b,_) =  b
 trd3 :: (a,b,c) -> c
 trd3    (_,_,c) =  c
 {-# INLINE trd3 #-}
-
-corpusI :: (Monad m) => I.Iteratee Text m (Sentence Text)
-corpusI = parserToIteratee sentenceP
 
 documentI :: (Monad m) => I.Iteratee Text m (Document Text)
 documentI = parserToIteratee documentP
