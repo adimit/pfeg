@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections, FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
 import Data.Text.ICU.Convert
@@ -103,27 +103,31 @@ main = do
                   putStrLn "Running…"
                   process session)
 
+getStatsLog :: PFEGConfig -> Maybe Handle
+getStatsLog PFEGConfig { pfegMode = Learn { statLog = rl } } = Just rl
+getStatsLog _ = Nothing
+
 process :: PFEGConfig -> IO ()
 process session = do
     tchan <- atomically $ newTBChan 2
     _dbthread_id <- forkIO $ dbthread (database session) tchan
-    dlchan <- atomically newTChan
-    _debLthread_id <- forkIO . forever $ debugLog (debugLogHandle session) dlchan
-    let log = atomically . writeTChan dlchan
+    logChan <- atomically newTChan
+    _debLthread_id <- forkIO . forever $ pfegLogger (debugLog session) (getStatsLog session) logChan
+    let log = atomically . writeTChan logChan
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertText
           let it = documentIteratee (recordDocsF tchan s)
           workOnCorpora "record" tchan documentI it session () cs
-        Match{ corpora = cs, resultLog = l } -> do
+        Learn{ corpora = cs } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialMatchScore session)
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
+          void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF chan)
           workOnCorpora "match" tchan documentI it session () cs
-        Predict { corpora = cs, resultLog = l } -> do
+        Predict { corpora = cs } -> do
           chan <- newChan
-          void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialPredictScore session)
-          let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
+          -- TODO: fork a score thread
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (predictF chan)
           workOnCorpora "predict" tchan documentI it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
@@ -142,14 +146,29 @@ generateItems conv fp = do
 
 type Logger = LogMessage -> IO ()
 
-matchF :: QueryChan -> ItemProcessor_
-matchF resLog i = do
-    session <- ask
-    queries <- mapM (querify.Pat.makeQuery (snd i)) (matchPatterns session)
-    liftIO $ do
-        (results,time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
-        writeChan resLog $ QueryData i results queries time 
+predictF :: QueryChan -> ItemProcessor_
+predictF = undefined
 
+-- There's some pretty unholy zipping and unzipping and tupling and
+-- untupling going on here, which *could* be a performance hog. Or not.
+-- Maybe we could factor that out into a separate thread.
+learnF :: QueryChan -> ItemProcessor_
+learnF resLog i = do
+    session <- ask
+    (ts,queries) <- mapAndUnzipM (execSecond querify) [ ((targ,pat),Pat.makeQuery (snd i) pat targ) 
+                                                 | pat <- matchPatterns session
+                                                 , targ <- targets session ]
+    liftIO $ do
+        (results',time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
+        let (results,errmsg) = getQueryResults results'
+        case errmsg of
+            Just err -> putStrLn $ "NO SEARCH RESULTS: " ++ T.unpack err
+            Nothing -> writeChan resLog $ QueryData i (queries,ts,results) time
+
+execSecond :: Monad m => (a -> m b) -> (c,a) -> m (c,b)
+execSecond k (c,a) = liftM (c,) (k a)
+
+-- FIXME: remove querify, or make it simpler.
 querify :: Text -> PFEG st Query
 querify q = do index <- liftM sphinxIndex ask
                return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
@@ -158,8 +177,7 @@ type QueryChan = Chan QueryData
 
 data QueryData = QueryData
     { qItem    :: !(Item Text)
-    , qResults :: !(Sphinx.Result [QueryResult])
-    , qQueries :: ![Query]
+    , qResults :: ([Query],[(Text,Pat.MatchPattern)],[QueryResult])
     , qTime    :: !NominalDiffTime }
     deriving (Show)
 
@@ -169,22 +187,6 @@ initialMatchScore = MatchScore 0 0
 
 tickScore :: (MonadState Score m) => m ()
 tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
-
-whichCase :: Score -> Text -> Text -> Token Text -> Score
-whichCase = undefined {-s@MatchScore { } majB p t
-     | p == gold || p == majB = s { scoreCorrect = scoreCorrect s + 1 }
-     | otherwise = s
-whichCase s@PredictScore { } p gold orig alts
-     | p == gold && p == orig = s { scoreAAA = scoreAAA s + 1, scoreCorrect = scoreCorrect s + 1 }
-     | p == gold             = s { scoreAAB = scoreAAB s + 1, scoreCorrect = scoreCorrect s + 1 }
-     | p == orig             = s { scoreABA = scoreABA s + 1 }
-     | orig == gold          = s { scoreABB = scoreABB s + 1 }
-     | p `elem` alts && p == orig = s { scoreAAAContained = scoreAAAContained s + 1
-                                      , scoreCorrect      = scoreCorrect s      + 1 }
-     | p `elem` alts              = s { scoreAABContained = scoreAABContained s + 1
-                                      , scoreCorrect      = scoreCorrect s      + 1 }
-     | orig `elem` alts           = s { scoreABBContained = scoreABBContained s + 1 }
-     | otherwise = s { scoreABC = scoreABC s + 1 } -}
 
 score :: Maybe Text -> Item Text -> PFEG Score Score
 score p i = do
@@ -219,6 +221,7 @@ retrieveSentences conn response = do
     ids'n'sentences <- queryDB conn docids
     return $ unzip ids'n'sentences
 
+{-
 matchLogger :: Logger -> Handle -> QueryChan -> PFEG Score ()
 matchLogger log l c = do
     session <- ask
@@ -243,12 +246,29 @@ matchLogger log l c = do
                            \T: " ++ renderS time ++ "\n\
                            \S: " ++ show newScore ++ "\n\
                            \X: " ++ show (fmap snd prediction)
+-}
 
-debugLog :: Handle -> LogChan -> IO ()
-debugLog h c = do
+learnLogger :: Logger -> QueryChan -> PFEG_ ()
+learnLogger log c = liftIO $ do
+    (QueryData item (queries,ts,results) time) <- readChan c
+    log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
+    mapM_ (logLine item) $ zip3 queries ts results
+    where logLine (target,context) (q,(predic,patt),res) = 
+             let ctxt = fmap surface context
+             in  log $ Stats [ T.unwords . left $ ctxt
+                             , surface target
+                             , T.unwords . right $ ctxt
+                             , queryString q
+                             , T.pack . show $ patt
+                             , predic
+                             , T.pack (show $ total res) ]
+
+pfegLogger :: Handle -> Maybe Handle -> LogChan -> IO ()
+pfegLogger debugH resultH c = do
     msg <- atomically $ readTChan c
-    hPrint h msg
-    hFlush h
+    case msg of
+        s@(Stats _) -> maybe (return ()) (\h -> hPrint h s >> hFlush h) resultH
+        msg' -> hPrint debugH msg' >> hFlush debugH
 
 type LogChan = TChan LogMessage
 
@@ -259,6 +279,7 @@ data LogMessage = Status Text
                 | forall a. RenderLog a => LogItem Text a
                 | Warning Text
                 | Error Text
+                | Stats [Text]
 
 instance RenderLog Pat.MatchData where
     renderLog Pat.MatchData { Pat.predictedTarget = predT
@@ -283,6 +304,7 @@ instance Show LogMessage where
     show (Warning t)   = "WARN: " ++ T.unpack t
     show (Error t)     = "ERR:  " ++ T.unpack t
     show (LogItem t i) = "*** " ++ T.unpack t ++":\n" ++ (T.unpack . renderLog $ i) ++  "\n***"
+    show (Stats s)     = T.unpack . T.intercalate "\t" $ s
 
 instance RenderLog Text where
     renderLog = id
