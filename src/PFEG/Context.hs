@@ -27,7 +27,7 @@ data Context a = Context { left  :: ![a]
                          } deriving (Functor,Show,Foldable,Traversable)
 
 type Item a = (Token a,Context (Token a))
-type ItemGetter = Sentence Text -> [Item Text]
+type ItemGetter = Document Text -> [Item Text]
 
 isMasked :: Token a -> Bool
 isMasked Masked {} = True
@@ -39,10 +39,10 @@ getContexts p s = map (mkContext . \i -> splitAt i s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = getContexts (p.surface)
+getSentenceItems p = getContexts (p.surface) . concat
 
 getMaskedItems :: (Text -> Bool) -> ItemGetter
-getMaskedItems p = getContexts (liftM2 (&&) isMasked (p.surface))
+getMaskedItems p = getContexts (liftM2 (&&) isMasked (p.surface)) . concat
 
 type Restriction = (Int,Int)
 
