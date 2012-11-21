@@ -152,7 +152,7 @@ matchF resLog i = do
 
 querify :: Text -> PFEG st Query
 querify q = do index <- liftM sphinxIndex ask
-               return Query { queryString = q, queryIndexes = T.pack index, queryComment = T.empty }
+               return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
 
 type QueryChan = Chan QueryData
 
@@ -190,7 +190,7 @@ score :: Maybe Text -> Item Text -> PFEG Score Score
 score p i = do
     mB <- liftM majorityBaseline ask
     let isCorrect = case p of
-                         Nothing -> T.pack mB == surface (fst i)
+                         Nothing -> mB == surface (fst i)
                          Just x  -> x == surface (fst i)
     oldScore <- get
     if isCorrect
