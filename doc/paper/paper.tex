@@ -1,4 +1,4 @@
-\documentclass[draft,12pt]{article}
+\documentclass[12pt]{article}
 
 \usepackage{fourier}
 \usepackage[english]{babel}
@@ -8,6 +8,9 @@
 \usepackage{linguex}
 
 \usepackage[breaklinks,colorlinks,citecolor=blue]{hyperref}
+\usepackage{aleks}
+
+\newcommand{\pfeg}{\textsc{pfeg}}
 
 \author{Aleksandar Dimitrov}
 \title{Predicting Functional Elements in German}
@@ -17,9 +20,57 @@
 
 \maketitle
 
-\newcommand{\pair}[1]{\ensuremath{\langle #1 \rangle}}
-
 \tableofcontents
+
+\section{Unordered Content FIXME}
+
+\subsection{Problem Description}
+
+%% I'm discontent with the pattern matching description here. Elaborate in
+%% sec:search-patterns? Then leave out here?
+
+I will adopt the nomenclature from~\citet{bergsmaETAL2009}, who introduce the
+set of candidates $C=\setof{c_1,\ldots,c_{|C|}}$ formed by the target
+prepositions. Given a sequence of tokens
+\pair{\ldots,w_{-2},w_{-1},w_0,w_1,w_2,\ldots}, a \emph{context pattern}, the
+task is to predict the right $c\in C$ for the position of $w_0$, without looking
+at the value of $w_0$.\footnote{This is different from the grammar correction
+  task, where $w_0$ is available, but may be wrong.} 
+Note that in this case, tokens consist of a
+surface form, \emph{and} a lemma and POS tag. The pattern may select for any
+combination of these features per token in theory (in practice, significant
+constraints will have to be imposed, see section~\ref{sec:search-patterns}.)
+
+This task amounts to a cloze task for prepositions~\citep{taylor1953}, which is
+not easy, even for human annotators. Two studies in the literature performed on
+English,~\citet{tetreaultchodorow2008} and~\citet{defelice2008} report an
+inter-annotator accuracy of 75\% and 89\%, respectively. The large discrepancy
+in the two figures is likely due to the different problem descriptions of the
+studies: the former targeted arbitrary prepositions, while the latter restricted
+$C$ to a set of the nine most frequent prepositions, which should have eased the
+task significantly.  The approach presented here follows the latter method of
+predicting $w_0$ from a confusion set of the most common prepositions.
+
+While no results for German are known to me, the typological similarity between
+German and English suggests that the numbers for German shouldn't be
+significantly different.
+
+\subsection{Representation Size}
+
+\citet{bankobrill2001} raise the concern of the representation size of a
+classifier, especially when using large collections of training data. The
+representation size of the \pfeg{} system depends on the search engine index,
+which is typically around FIXME times of the input size in bytes.
+
+\subsection{Evaluation Metrics}
+
+Precision and recall are not appropriate here, instead I use accuracy and
+coverage. % Do we need coverage?
+
+\subsection{Future Work}
+\begin{itemize}
+  \item Perform preposition insertion cloze task for German.
+\end{itemize}
 
 \section{Abstract}
 
