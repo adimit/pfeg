@@ -119,12 +119,12 @@ process session = do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialMatchScore session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (matchF chan)
-          workOnCorpora "match" tchan corpusI it session () cs
+          workOnCorpora "match" tchan documentI it session () cs
         Predict { corpora = cs, resultLog = l } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ matchLogger log l chan) initialPredictScore session)
           let it = itemIteratee (getMaskedItems (`elem` targets session)) (matchF chan)
-          workOnCorpora "predict" tchan corpusI it session () cs
+          workOnCorpora "predict" tchan documentI it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
     atomically $ do
@@ -138,7 +138,7 @@ generateItems :: Converter -> FilePath -> IO [Item Text]
 generateItems conv fp = do
     let ig = getSentenceItems (`elem` T.words "auf in am")
     liftM concat $
-        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream corpusI) (I.joinI $ I.mapChunks ig I.getChunks))
+        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream documentI) (I.joinI $ I.mapChunks ig I.getChunks))
 
 type Logger = LogMessage -> IO ()
 
@@ -517,7 +517,7 @@ recordF chan stmt s = do
        then put (0,[]) >> liftIO (atomically (writeTBChan chan (DBWrite stmt vals')))
        else put (i+1,vals')
 
-itemIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
+itemIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Document Text) (PFEG st) ()
 itemIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
 
 sentenceIteratee :: SentenceProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
