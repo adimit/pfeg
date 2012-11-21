@@ -42,30 +42,28 @@ type Corpus = (Name,FilePath)
 data PFEGConfig = PFEGConfig
     { pfegMode         :: ModeConfig -- ^ Program mode specific configuration
     , statusLine       :: Chan Int -- ^ Status update channel
-    , debugLogHandle   :: Handle -- ^ Debugging log file
     , database         :: Connection -- ^ The connection to the main database
     , corpusConverter  :: Converter -- ^ Text.ICU input encoding converter
     , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: Text
     , sphinxIndex      :: Text
+    , debugLog         :: Handle -- ^ Write debug information to this log
     , chunkSize        :: Int -- ^ Chunk size for the Iteratee
     , matchPatterns    :: [Pat.MatchPattern] }
 
-data ModeConfig = Record { corpora   :: [Corpus] }
-                | Match  { corpora   :: [Corpus]
-                         , searchConf:: S.Configuration
-                         , resultLog   :: Handle }
-                         , resultLog :: Handle }
-                | Predict { corpora  :: [Corpus]
-                          , searchConf:: S.Configuration
-                          , resultLog :: Handle }
+data ModeConfig = Record { corpora     :: [Corpus] }
+                | Learn  { corpora     :: [Corpus]
+                         , searchConf  :: S.Configuration
+                         , statLog   :: Handle }
+                | Predict { corpora    :: [Corpus]
+                          , searchConf :: S.Configuration }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
 
-data RunMode = RunRecord | RunMatch | RunPredict
+data RunMode = RunRecord | RunLearn | RunPredict
 detectMode :: String -> Configurator RunMode
-detectMode "match" = return RunMatch
+detectMode "learn" = return RunLearn
 detectMode "record" = return RunRecord
 detectMode "predict" = return RunPredict
 detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
@@ -77,7 +75,8 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ database pfeg
-    case pfegMode pfeg of m@Match{} -> hClose $ resultLog m
+    hClose $ debugLog pfeg
+    case pfegMode pfeg of m@Learn{} -> hClose $ statLog m
                           _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
@@ -113,25 +112,23 @@ initialize modeString cfg = do
     conv <- liftC $ open encoding Nothing
     pats <- getPatterns cfg "patterns" "patterns"
     runas <- case mode of
-      RunMatch -> do
-            test  <- getCorpusSet cfg "tasks" "match"
-            resL  <- openHandle AppendMode cfg "main" "resultLog"
-            return Match { corpora    = test
-                         , searchConf = defaultSearchConf shost sport
-                         , resultLog  = resL }
+      RunLearn -> do
+            test  <- getCorpusSet cfg "tasks" "learn"
+            resL  <- openHandle AppendMode cfg "main" "statLog"
+            return Learn { corpora    = test
+                         , searchConf = defaultSearchConf shost sport 
+                         , statLog  = resL }
       RunRecord -> do
             train <- getCorpusSet cfg "tasks" "record"
             return Record { corpora = train }
       RunPredict -> do
             predict <- getCorpusSet cfg "tasks" "predict"
-            resL <- openHandle AppendMode cfg "main" "predictLog"
             return Predict { corpora    = predict
-                           , searchConf = defaultSearchConf shost sport
-                           , resultLog  = resL }
+                           , searchConf = defaultSearchConf shost sport }
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
-                            , debugLogHandle   = debL
+                            , debugLog         = debL
                             , sphinxIndex      = T.pack sindex
                             , targets          = targs
                             , corpusConverter  = conv
@@ -160,7 +157,7 @@ printConfig c =
 showMode :: ModeConfig -> String
 showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
     where mode = case c of Record  {} -> "PFEG is in RECORD mode\n"
-                           Match   {} -> "PFEG is in MATCH mode\n"
+                           Learn   {} -> "PFEG is in LEARN mode\n"
                            Predict {} -> "PFEG is in PREDICT mode\n"
 
 defaultSearchConf :: String -> Int -> S.Configuration

@@ -34,11 +34,11 @@ data MatchData = MatchData
 
 data MatchPattern = MatchPattern { left  :: Match
                                  , right :: Match
-                                 , centerInterference  :: Int
                                  , level :: Level
+                                 , tolerance :: Int
                                  , weight :: Double }
 
-data Match = Match { size :: Int, tolerance :: Int }
+data Match = Match { size :: Int }
 
 data Level = Surface | Lemma
 
@@ -47,10 +47,10 @@ instance Show Level where
     show Lemma   = "L"
 
 instance Show Match where
-    show Match { size = s, tolerance = t } = show s ++ '~':show t
+    show Match { size = s } = show s
 
 instance Show MatchPattern where
-    show mp = show (level mp) ++ show (left mp) ++ '-':show (centerInterference mp) ++ '-':show (right mp) ++ '|':show (weight mp)
+    show mp = show (level mp) ++ show (left mp) ++ '-':show (right mp) ++ '~':show (tolerance mp) ++ '|':show (weight mp)
 
 patternRestriction :: MatchPattern -> Restriction
 patternRestriction MatchPattern { left = Match { size = l } , right = Match { size = r } } = (l,r)
@@ -66,29 +66,21 @@ parseLevel = (char 'L' >> return Lemma) <|> (char 'S' >> return Surface)
 parseMatch :: Parser Match
 parseMatch = do
     sz  <- liftM read $ many1 digit
-    tol <- option 1 (try (char '~' >> liftM read (many1 digit)))
-    return Match { size = sz, tolerance = tol }
+    return Match { size = sz }
 
 parsePattern :: Parser MatchPattern
 parsePattern = do
     lvl <- parseLevel
     l <- parseMatch
-    (inter,r) <- try (do
-        inter <- char '-' >> many1 digit
-        r     <- char '-' >> parseMatch
-        return (inter,r)) <|> liftM ("1",) (char '-' >> parseMatch)
+    r <- char '-' >> parseMatch
+    tol <- option "1" (try (char '~' >> (many1 digit)))
     w <- option 1.0 parseWeight
-    return MatchPattern { level = lvl, left = l, right = r, centerInterference = read inter, weight = w }
+    return MatchPattern { level = lvl, left = l, right = r, tolerance = read tol, weight = w }
 
-makeQuery :: C.Context (Token Text) -> MatchPattern -> Text
-makeQuery cxt' p =
-    let ctxt = retrieveWords' cxt' p
-    in case ctxt of
-           C.Context [] r -> pr r (right p)
-           C.Context l [] -> pr l (left p)
-           C.Context l r -> T.intercalate " " [ pr l (left p) , T.pack "NEAR/3" , pr r (right p)]
-    where pr ws m = T.unwords [ renderLevel (level p)
-                              , T.concat [wrap '"' (T.unwords ws),renderTolerance (tolerance m)]]
+makeQuery :: C.Context (Token Text) -> MatchPattern -> Text -> Text
+makeQuery cxt' p t =
+    let C.Context { C.left = leftContext, C.right = rightContext} = retrieveWords' cxt' p
+    in T.unwords [renderLevel (level p), T.concat [wrap '"' (T.unwords (leftContext ++ t:rightContext)), renderTolerance (tolerance p)]]
 
 retrieveWords' :: Context (Token a) -> MatchPattern -> Context a
 retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)
