@@ -47,8 +47,8 @@ data PFEGConfig = PFEGConfig
     , database         :: Connection -- ^ The connection to the main database
     , corpusConverter  :: Converter -- ^ Text.ICU input encoding converter
     , targets          :: [Text] -- ^ Targets for this run
-    , majorityBaseline :: String
-    , sphinxIndex      :: String
+    , majorityBaseline :: Text
+    , sphinxIndex      :: Text
     , chunkSize        :: Int -- ^ Chunk size for the Iteratee
     , matchPatterns    :: [Pat.MatchPattern] }
 
@@ -136,10 +136,10 @@ initialize modeString cfg = do
                             , database         = db
                             , statusLine       = statC
                             , debugLogHandle   = debL
-                            , sphinxIndex      = sindex
+                            , sphinxIndex      = T.pack sindex
                             , targets          = targs
                             , corpusConverter  = conv
-                            , majorityBaseline = majB
+                            , majorityBaseline = T.pack majB
                             , matchPatterns    = pats
                             , chunkSize        = csize }
     liftIO $ do putStrLn "Done."
@@ -149,7 +149,7 @@ initialize modeString cfg = do
 printConfig :: PFEGConfig -> IO ()
 printConfig c =
     putStr $ "PFEG Configuration:\n" ++
-             "\tMajority baseline: " ++ majorityBaseline c ++ "\n\
+             "\tMajority baseline: " ++ T.unpack (majorityBaseline c) ++ "\n\
              \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
              \\tPatterns: " ++ (unlines . addSpaces) (map (unwords . map show) (makeBits 3 $ matchPatterns c)) ++ "\n\
              \\t" ++ showMode (pfegMode c)
