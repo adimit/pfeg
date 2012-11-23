@@ -20,7 +20,6 @@ import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
 import Control.Monad.Error
 import Data.List.Split (splitOn)
-import qualified Text.Search.Sphinx.ExcerptConfiguration as Ex
 import qualified PFEG.Pattern as Pat
 import Data.Either
 import qualified Text.Parsec as Parsec
@@ -55,11 +54,10 @@ data PFEGConfig = PFEGConfig
 data ModeConfig = Record { corpora   :: [Corpus] }
                 | Match  { corpora   :: [Corpus]
                          , searchConf:: S.Configuration
-                         , exConf    :: Ex.ExcerptConfiguration
+                         , resultLog   :: Handle }
                          , resultLog :: Handle }
                 | Predict { corpora  :: [Corpus]
                           , searchConf:: S.Configuration
-                          , exConf    :: Ex.ExcerptConfiguration
                           , resultLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
@@ -119,7 +117,6 @@ initialize modeString cfg = do
             test  <- getCorpusSet cfg "tasks" "match"
             resL  <- openHandle AppendMode cfg "main" "resultLog"
             return Match { corpora    = test
-                         , exConf     = defaultExcerptConf shost sport
                          , searchConf = defaultSearchConf shost sport
                          , resultLog  = resL }
       RunRecord -> do
@@ -129,7 +126,6 @@ initialize modeString cfg = do
             predict <- getCorpusSet cfg "tasks" "predict"
             resL <- openHandle AppendMode cfg "main" "predictLog"
             return Predict { corpora    = predict
-                           , exConf     = defaultExcerptConf shost sport
                            , searchConf = defaultSearchConf shost sport
                            , resultLog  = resL }
     let config = PFEGConfig { pfegMode         = runas
@@ -166,13 +162,6 @@ showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
     where mode = case c of Record  {} -> "PFEG is in RECORD mode\n"
                            Match   {} -> "PFEG is in MATCH mode\n"
                            Predict {} -> "PFEG is in PREDICT mode\n"
-
-defaultExcerptConf :: String -> Int -> Ex.ExcerptConfiguration
-defaultExcerptConf shost sport = Ex.altConfig
-    { Ex.host        = shost
-    , Ex.port        = sport
-    , Ex.beforeMatch = "{"
-    , Ex.afterMatch  = "}" }
 
 defaultSearchConf :: String -> Int -> S.Configuration
 defaultSearchConf shost sport = S.defaultConfig
