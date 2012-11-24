@@ -20,7 +20,7 @@ Library
                    , Paths_PFEGtools
     Build-Depends: base
                  , array == 0.4.*
-                 , split == 0.1.*
+                 , split == 0.2.*
                  , bytestring == 0.9.*
                  , time == 1.4.*
                  , MonadCatchIO-transformers == 0.3.*
