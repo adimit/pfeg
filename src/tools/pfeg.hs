@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections, FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
+import Data.List.Split (chunksOf)
 import Data.Text.ICU.Convert
 import System.Locale
 import qualified Data.HashMap.Strict as M
@@ -159,11 +160,27 @@ learnF resLog i = do
                                                  | pat <- matchPatterns session
                                                  , targ <- targets session ]
     liftIO $ do
-        (results',time) <- liftIO . doTimed $ runQueries (searchConf.pfegMode $ session) queries
+        (results',time) <- doTimed $ runQueriesChunked (searchConf.pfegMode $ session) queries
         let (results,errmsg) = getQueryResults results'
         case errmsg of
             Just err -> putStrLn $ "NO SEARCH RESULTS: " ++ T.unpack err
             Nothing -> writeChan resLog $ QueryData i (queries,ts,results) time
+
+runQueriesChunked :: Configuration -> [Query] -> IO (Sphinx.Result [QueryResult])
+runQueriesChunked conf qs' =
+    let qs = chunksOf 32 qs'
+    in liftM (f $ (Sphinx.Ok [])) $ mapM (runQueries conf) qs
+    where f (Sphinx.Ok ol) [] = Sphinx.Ok ol
+          f (Sphinx.Warning t ol) [] = Sphinx.Warning t ol
+          f (Sphinx.Ok ol) (r:rs) = case r of
+                                       Sphinx.Ok l -> f (Sphinx.Ok $ ol ++ l) rs
+                                       Sphinx.Warning w l -> f (Sphinx.Warning w (ol ++ l)) rs
+                                       err -> err
+          f (Sphinx.Warning ow ol) (r:rs) = case r of
+                                       Sphinx.Ok l -> f (Sphinx.Warning ow $ ol ++ l) rs
+                                       Sphinx.Warning w l -> f (Sphinx.Warning (T.unlines [ow,w]) $ ol ++ l) rs
+                                       err -> err
+          f err _ = err
 
 execSecond :: Monad m => (a -> m b) -> (c,a) -> m (c,b)
 execSecond k (c,a) = liftM (c,) (k a)
