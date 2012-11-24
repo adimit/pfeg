@@ -39,10 +39,10 @@ getContexts p s = map (mkContext . \i -> splitAt i s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = getContexts (p.surface) . concat
+getSentenceItems p = concatMap (getContexts (p.surface))
 
 getMaskedItems :: (Text -> Bool) -> ItemGetter
-getMaskedItems p = getContexts (liftM2 (&&) isMasked (p.surface)) . concat
+getMaskedItems p = concatMap (getContexts (liftM2 (&&) isMasked (p.surface)))
 
 type Restriction = (Int,Int)
 
