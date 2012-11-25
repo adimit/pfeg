@@ -167,7 +167,7 @@ learnF resLog i = do
         (results',time) <- doTimed $ runQueriesChunked (searchConf.pfegMode $ session) queries
         let (results,errmsg) = getQueryResults results'
         case errmsg of
-            Just err -> putStrLn $ "NO SEARCH RESULTS: " ++ T.unpack err
+            Just err -> putStrLn $ "FAILED TO GET RESULTS: " ++ T.unpack err
             Nothing -> writeChan resLog $ QueryData itemNumber i (queries,ts,results) time
 
 runQueriesChunked :: Configuration -> [Query] -> IO (Sphinx.Result [QueryResult])
