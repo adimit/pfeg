@@ -276,7 +276,7 @@ learnLogger log c = liftIO $ do
                              , surface target
                              , T.unwords . right $ ctxt
                              , queryString q
-                             , T.pack . show $ patt
+                             , T.pack . Pat.showShort $ patt
                              , predic
                              , T.pack (show $ total res) ]
 
