@@ -169,7 +169,7 @@ learnF resLog i = do
 runQueriesChunked :: Configuration -> [Query] -> IO (Sphinx.Result [QueryResult])
 runQueriesChunked conf qs' =
     let qs = chunksOf 32 qs'
-    in liftM (f $ (Sphinx.Ok [])) $ mapM (runQueries conf) qs
+    in liftM (f $ Sphinx.Ok []) $ mapM (runQueries conf) qs
     where f (Sphinx.Ok ol) [] = Sphinx.Ok ol
           f (Sphinx.Warning t ol) [] = Sphinx.Warning t ol
           f (Sphinx.Ok ol) (r:rs) = case r of
@@ -237,33 +237,6 @@ retrieveSentences conn response = do
     when (isJust msg) $ putStrLn $ "WARNING: " ++ (T.unpack . fromJust $ msg)
     ids'n'sentences <- queryDB conn docids
     return $ unzip ids'n'sentences
-
-{-
-matchLogger :: Logger -> Handle -> QueryChan -> PFEG Score ()
-matchLogger log l c = do
-    session <- ask
-    (QueryData item response queries time) <- liftIO $ readChan c
-    (docids,sentences) <- liftIO $ retrieveSentences (database session) response
-    let preds      = concatMap (getMatches (targets session) (matchPatterns session) $ snd item) sentences
-        scoredData = scoreMatchData preds
-        prediction = findBestPrediction (snd item) scoredData
-    liftIO $ do
-        log $ LogItem (T.concat["Item: ", surface . fst $ item]) item
-        log $ LogItem "Queries" (zip (matchPatterns session) queries)
-        log $ LogItem "Sentences from DB" (zip docids sentences)
-        log $ LogItem "Predictions" preds
-        log $ LogItem "Scored Predictions" scoredData
-        log $ Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-        log $ Status $ T.intercalate " " ["Chose",renderLog prediction]
-    newScore <- score (fmap fst prediction) item
-    put $! newScore
-    liftIO $ do forM_ (map (showScoredData item (totalScored newScore)) scoredData) (\line -> hPutStrLn l line >> hFlush l)
-                putStrLn $ "P: " ++ show (fmap (T.unpack . fst) prediction) ++ "\n\
-                           \A: " ++ show (fst item) ++ "\n\
-                           \T: " ++ renderS time ++ "\n\
-                           \S: " ++ show newScore ++ "\n\
-                           \X: " ++ show (fmap snd prediction)
--}
 
 learnLogger :: Logger -> QueryChan -> PFEG_ ()
 learnLogger log c = liftIO $ do

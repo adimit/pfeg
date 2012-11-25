@@ -78,7 +78,7 @@ parsePattern = do
     lvl <- parseLevel
     l <- parseMatch
     r <- char '-' >> parseMatch
-    tol <- option "1" (try (char '~' >> (many1 digit)))
+    tol <- option "1" (try (char '~' >> many1 digit))
     w <- option 1.0 parseWeight
     return MatchPattern { level = lvl, left = l, right = r, tolerance = read tol, weight = w }
 
