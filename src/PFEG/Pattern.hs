@@ -8,6 +8,7 @@ module PFEG.Pattern
     , MatchData(..)
     , Interference(..)
       -- ** Parsing and rendering functions for patterns
+    , showShort
     , parsePattern
     , matchParser
     , makeQuery
@@ -50,7 +51,11 @@ instance Show Match where
     show Match { size = s } = show s
 
 instance Show MatchPattern where
-    show mp = show (level mp) ++ show (left mp) ++ '-':show (right mp) ++ '~':show (tolerance mp) ++ '|':show (weight mp)
+    show mp = showShort mp ++ '|':show (weight mp)
+
+-- | Like "MatchPattern"'s "Show" instance, but without showing the weight
+showShort :: MatchPattern -> String
+showShort mp = show (level mp) ++ show (left mp) ++ '-':show (right mp) ++ '~':show (tolerance mp)
 
 patternRestriction :: MatchPattern -> Restriction
 patternRestriction MatchPattern { left = Match { size = l } , right = Match { size = r } } = (l,r)
