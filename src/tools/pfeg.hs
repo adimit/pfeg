@@ -124,7 +124,7 @@ process session = do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF chan)
-          workOnCorpora "match" tchan documentI it session () cs
+          workOnCorpora "match" tchan documentI it session 0 cs
         Predict { corpora = cs } -> do
           chan <- newChan
           -- TODO: fork a score thread
@@ -150,12 +150,16 @@ type Logger = LogMessage -> IO ()
 predictF :: QueryChan -> ItemProcessor_
 predictF = undefined
 
+type ItemNumber = Integer
+
 -- There's some pretty unholy zipping and unzipping and tupling and
 -- untupling going on here, which *could* be a performance hog. Or not.
 -- Maybe we could factor that out into a separate thread.
-learnF :: QueryChan -> ItemProcessor_
+learnF :: QueryChan -> ItemProcessor ItemNumber
 learnF resLog i = do
     session <- ask
+    modify' (+1)
+    itemNumber <- get
     (ts,queries) <- mapAndUnzipM (execSecond querify) [ ((targ,pat),Pat.makeQuery (snd i) pat targ) 
                                                  | pat <- matchPatterns session
                                                  , targ <- targets session ]
@@ -164,7 +168,7 @@ learnF resLog i = do
         let (results,errmsg) = getQueryResults results'
         case errmsg of
             Just err -> putStrLn $ "NO SEARCH RESULTS: " ++ T.unpack err
-            Nothing -> writeChan resLog $ QueryData i (queries,ts,results) time
+            Nothing -> writeChan resLog $ QueryData itemNumber i (queries,ts,results) time
 
 runQueriesChunked :: Configuration -> [Query] -> IO (Sphinx.Result [QueryResult])
 runQueriesChunked conf qs' =
@@ -193,9 +197,10 @@ querify q = do index <- liftM sphinxIndex ask
 type QueryChan = Chan QueryData
 
 data QueryData = QueryData
-    { qItem    :: !(Item Text)
-    , qResults :: ([Query],[(Text,Pat.MatchPattern)],[QueryResult])
-    , qTime    :: !NominalDiffTime }
+    { qItemNumber :: !Integer
+    , qItem       :: !(Item Text)
+    , qResults    :: ([Query],[(Text,Pat.MatchPattern)],[QueryResult])
+    , qTime       :: !NominalDiffTime }
     deriving (Show)
 
 initialPredictScore, initialMatchScore :: Score
@@ -240,12 +245,13 @@ retrieveSentences conn response = do
 
 learnLogger :: Logger -> QueryChan -> PFEG_ ()
 learnLogger log c = liftIO $ do
-    (QueryData item (queries,ts,results) time) <- readChan c
+    (QueryData itemNumber item (queries,ts,results) time) <- readChan c
     log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-    mapM_ (logLine item) $ zip3 queries ts results
-    where logLine (target,context) (q,(predic,patt),res) = 
+    mapM_ (logLine itemNumber item) $ zip3 queries ts results
+    where logLine itemNumber (target,context) (q,(predic,patt),res) =
              let ctxt = fmap surface context
-             in  log $ Stats [ T.unwords . left $ ctxt
+             in  log $ Stats [ T.pack $ show itemNumber
+                             , T.unwords . left $ ctxt
                              , surface target
                              , T.unwords . right $ ctxt
                              , queryString q
