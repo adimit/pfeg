@@ -39,7 +39,8 @@ getContexts p s = map (mkContext . \i -> splitAt i s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = concatMap (getContexts (p.surface))
+getSentenceItems p = concatMap (getContexts (p.surface) . filter (not.punctuation))
+    where punctuation t = surface t `elem` [".",",","?","!"]
 
 getMaskedItems :: (Text -> Bool) -> ItemGetter
 getMaskedItems p = concatMap (getContexts (liftM2 (&&) isMasked (p.surface)))
