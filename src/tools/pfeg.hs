@@ -27,6 +27,7 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import Data.List (sortBy,intercalate)
+import qualified Data.List as L
 
 import Data.Function (on)
 
@@ -245,10 +246,12 @@ retrieveSentences conn response = do
 
 learnLogger :: Logger -> QueryChan -> PFEG_ ()
 learnLogger log c = liftIO $ do
-    (QueryData itemNumber item (queries,ts,results) time) <- readChan c
+    (QueryData itemNumber item (queries,ts,results') time) <- readChan c
     log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-    mapM_ (logLine itemNumber item) $ zip3 queries ts results
-    where logLine itemNumber (target,context) (q,(predic,patt),res) =
+    let results = map total results'
+        preds = concatMap (correctness $ surface . fst $ item) $ L.groupBy (\((_,a),_) ((_,b),_) -> a == b) $ zip ts results
+    mapM_ (logLine itemNumber time item) $ L.zip4 queries ts results preds
+    where  logLine itemNumber time (target,context) (q,(predic,patt),res,correctPred) =
              let ctxt = fmap surface context
              in  log $ Stats [ T.pack $ show itemNumber
                              , T.unwords . left $ ctxt
@@ -257,7 +260,14 @@ learnLogger log c = liftIO $ do
                              , queryString q
                              , T.pack . Pat.showShort $ patt
                              , predic
-                             , T.pack (show $ total res) ]
+                             , T.pack . show $ res
+                             , T.pack . show . (round :: NominalDiffTime -> Integer) $ time
+                             , correctPred ]
+
+correctness :: Text -> [((Text,Pat.MatchPattern),Int)] -> [Text]
+correctness target ls = let p = cr . head . sortBy (flip compare `on` snd) $ ls
+                            cr ((t,_),c) = c /= 0 && t == target
+                        in replicate (length ls) $ if p then "Correct" else "Incorrect"
 
 pfegLogger :: Handle -> Maybe Handle -> LogChan -> IO ()
 pfegLogger debugH resultH c = do
