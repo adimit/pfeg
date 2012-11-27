@@ -33,15 +33,15 @@ data MatchData = MatchData
     , matchPattern     :: MatchPattern
     } deriving Show
 
-data MatchPattern = MatchPattern { left  :: Match
-                                 , right :: Match
-                                 , level :: Level
-                                 , tolerance :: Int
-                                 , weight :: Double }
+data MatchPattern = MatchPattern { left  :: !Match
+                                 , right :: !Match
+                                 , level :: !Level
+                                 , tolerance :: !Int
+                                 , weight :: !Double } deriving Eq
 
-data Match = Match { size :: Int }
+data Match = Match { size :: !Int } deriving Eq
 
-data Level = Surface | Lemma
+data Level = Surface | Lemma deriving Eq
 
 instance Show Level where
     show Surface = "S"
