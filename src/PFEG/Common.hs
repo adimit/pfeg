@@ -109,14 +109,14 @@ wordP res = do
     return $! makeWord res Word { pos = p, surface = s, lemma = l }
 
 makeWord :: Regexes -> Token Text -> Maybe (Token Text)
-makeWord Regexes { numeralRegex = nre, timeRegex = tre, dateRegex = dre }
+makeWord Regexes { cardTag = ct, numeralRegex = nre, timeRegex = tre, dateRegex = dre }
          w@(Word { surface = s, pos = p }) 
            | X.null s = Nothing
-           | p == "CARD" && s `matches` tre = Just $ w { surface = "TIME", lemma = "TIME" }
-           | p == "CARD" && s `matches` dre = Just $ w { surface = "DATE", lemma = "DATE" }
-           | p == "CARD" && s `matches` nre = Just w
-           | p == "CARD" && s `inRange` (1,12) = Just w
-           | p == "CARD" = Just w { surface = "CARD", lemma = "CARD" }
+           | p == ct && s `matches` tre = Just $ w { surface = "TIME", lemma = "TIME" }
+           | p == ct && s `matches` dre = Just $ w { surface = "DATE", lemma = "DATE" }
+           | p == ct && s `matches` nre = Just w
+           | p == ct && s `inRange` (1,12) = Just w
+           | p == ct = Just w { surface = "CARD", lemma = "CARD" }
            | X.any (=='.') . X.init $ s = Nothing
 makeWord _ w = Just w
 

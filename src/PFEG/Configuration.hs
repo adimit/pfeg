@@ -31,6 +31,7 @@ data Regexes = Regexes
      { numeralRegex :: Regex -- ^ when tagged CARD and matching this, tokens are left as is
      , dateRegex    :: Regex -- ^ when tagged CARD and matching this, surface is DATE
      , timeRegex    :: Regex -- ^ when tagged CARD and matching this, surface is TIME
+     , cardTag :: Text -- ^ The pos tag that represents cardinalities
      }
 
 data ConfigError = IOError FilePath
@@ -114,6 +115,7 @@ initialize modeString cfg = do
     majB  <- getValue cfg "main" "majorityBaseline"
     debL  <- openHandle AppendMode cfg "main" "debugLog"
     mode <- detectMode modeString
+    cardPOS <- getValue cfg "data" "cardtag"
     dateRE <- parseRegex =<< getValue cfg "data" "dates"
     timeRE <- parseRegex =<< getValue cfg "data" "times"
     numrRE <- parseRegex =<< getValue cfg "data" "numerals"
@@ -142,7 +144,8 @@ initialize modeString cfg = do
                             , statusLine       = statC
                             , cardRegexes      = Regexes { numeralRegex = numrRE
                                                          , dateRegex = dateRE
-                                                         , timeRegex = timeRE }
+                                                         , timeRegex = timeRE
+                                                         , cardTag = T.pack cardPOS }
                             , debugLog         = debL
                             , sphinxIndex      = T.pack sindex
                             , targets          = targs
