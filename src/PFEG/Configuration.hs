@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, GeneralizedNewtypeDeriving #-}
 module PFEG.Configuration
     ( ConfigError
+    , Regexes(..)
     , Corpus
     , PFEGConfig(..)
     , ModeConfig(..)
@@ -24,6 +25,13 @@ import qualified PFEG.Pattern as Pat
 import Data.Either
 import qualified Text.Parsec as Parsec
 import Data.Text.ICU.Convert
+import Data.Text.ICU
+
+data Regexes = Regexes
+     { numeralRegex :: Regex -- ^ when tagged CARD and matching this, tokens are left as is
+     , dateRegex    :: Regex -- ^ when tagged CARD and matching this, surface is DATE
+     , timeRegex    :: Regex -- ^ when tagged CARD and matching this, surface is TIME
+     }
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -47,6 +55,7 @@ data PFEGConfig = PFEGConfig
     , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: Text
     , sphinxIndex      :: Text
+    , cardRegexes      :: Regexes
     , debugLog         :: Handle -- ^ Write debug information to this log
     , chunkSize        :: Int -- ^ Chunk size for the Iteratee
     , matchPatterns    :: [Pat.MatchPattern] }
@@ -105,6 +114,9 @@ initialize modeString cfg = do
     majB  <- getValue cfg "main" "majorityBaseline"
     debL  <- openHandle AppendMode cfg "main" "debugLog"
     mode <- detectMode modeString
+    dateRE <- parseRegex =<< getValue cfg "data" "dates"
+    timeRE <- parseRegex =<< getValue cfg "data" "times"
+    numrRE <- parseRegex =<< getValue cfg "data" "numerals"
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
     sindex <- getValue cfg "sphinx" "index"
@@ -128,6 +140,9 @@ initialize modeString cfg = do
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
+                            , cardRegexes      = Regexes { numeralRegex = numrRE
+                                                         , dateRegex = dateRE
+                                                         , timeRegex = timeRE }
                             , debugLog         = debL
                             , sphinxIndex      = T.pack sindex
                             , targets          = targs
@@ -204,3 +219,9 @@ getValue cfg sec opt | hasSection sec cfg = case getOption sec opt cfg of
                                Nothing    -> throwError $ OptionNotSet sec opt
                      | otherwise          = throwError $ SectionNotPresent sec
 
+parseRegex :: OptionValue -> Configurator Regex
+parseRegex = fromEither . regex' [] . T.pack
+    where fromEither (Right r)  = return r
+          fromEither (Left err) = throwError . ParseError $ 
+            "Failed Regex parse: " ++ show err ++ "\nCheck " ++ url ++ " for regex syntax."
+          url = "http://userguide.icu-project.org/strings/regexp"

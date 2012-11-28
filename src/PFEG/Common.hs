@@ -25,6 +25,7 @@ module PFEG.Common
     , Text
     ) where
 
+import PFEG.Configuration
 import Data.Nullable
 import Data.NullPoint
 import Data.Typeable
@@ -37,7 +38,7 @@ import qualified Data.Text as X
 import Data.Text (Text)
 
 import Control.Monad.State.Strict
-import Data.Maybe (catMaybes)
+import Data.Maybe (isJust,catMaybes)
 
 import Control.Concurrent.Chan
 import Data.Iteratee.Base
@@ -54,6 +55,9 @@ import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
+
+import Data.Text.ICU (Regex,find)
+import Data.Text.Read (decimal)
 
 instance Nullable Text where
     nullC = X.null
@@ -84,29 +88,42 @@ filterPoop :: Text -> Text
 filterPoop x | x `elem` [".","?","!"] = x 
              | otherwise = X.filter (`elem` ['a'..'z'] ++ "äöüß-.") x
 
-documentP :: Parser (Document Text)
-documentP = liftM (filter (not.null)) $ textURLP *> sentenceP `A.manyTill` A.string "</text>\n"
+documentP :: Regexes -> Parser (Document Text)
+documentP res = liftM (filter (not.null)) $ textURLP *> sentenceP res `A.manyTill` A.string "</text>\n"
 textURLP :: Parser Text
 textURLP = "<text id=\"" A..*> A.takeWhile (/= '"') A.<*. "\">\n"
 
-sentenceP :: Parser (Sentence Text)
-sentenceP = do
+sentenceP :: Regexes -> Parser (Sentence Text)
+sentenceP res = do
     _ <- A.string "<s>\n"
-    ws <- wordP `A.manyTill` A.string "</s>\n"
+    ws <- wordP res `A.manyTill` A.string "</s>\n"
     return . catMaybes $ ws
 
-wordP :: Parser (Maybe (Token Text))
-wordP = do
+wordP :: Regexes -> Parser (Maybe (Token Text))
+wordP res = do
     s <- liftM normalize $ A.takeWhile (/= '\t') <* A.char '\t'
     p <- A.takeWhile (/= '\t') <* A.char '\t'
     l <- liftM normalize $ A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
-    let w = Word { pos = p, surface = s, lemma = l }
-    return $! if wordIsOK w then Just w else Nothing
+    return $! makeWord res Word { pos = p, surface = s, lemma = l }
 
-wordIsOK :: Token Text -> Bool
-wordIsOK Word { surface = s } | X.null s = False
-                              | X.any (=='.') $ X.init s = False
-wordIsOK _ = True
+makeWord :: Regexes -> Token Text -> Maybe (Token Text)
+makeWord Regexes { numeralRegex = nre, timeRegex = tre, dateRegex = dre }
+         w@(Word { surface = s, pos = p }) 
+           | X.null s = Nothing
+           | p == "CARD" && s `matches` tre = Just $ w { surface = "TIME", lemma = "TIME" }
+           | p == "CARD" && s `matches` dre = Just $ w { surface = "DATE", lemma = "DATE" }
+           | p == "CARD" && s `matches` nre = Just w
+           | p == "CARD" && s `inRange` (1,12) = Just w
+           | p == "CARD" = Just w { surface = "CARD", lemma = "CARD" }
+           | X.any (=='.') . X.init $ s = Nothing
+makeWord _ w = Just w
+
+inRange :: Text -> (Int,Int) -> Bool
+inRange t (l,u) = case decimal t of Right (a, t') -> X.null t' && l <= a && a <= u
+                                    _ -> False
+
+matches :: Text -> Regex -> Bool
+matches t re = isJust $ find re t
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a
@@ -120,8 +137,8 @@ trd3 :: (a,b,c) -> c
 trd3    (_,_,c) =  c
 {-# INLINE trd3 #-}
 
-documentI :: (Monad m) => I.Iteratee Text m (Document Text)
-documentI = parserToIteratee documentP
+documentI :: (Monad m) => Regexes -> I.Iteratee Text m (Document Text)
+documentI res = parserToIteratee (documentP res)
 
 countChunksI :: (MonadIO m, Nullable a) => Chan Int -> I.Iteratee a m ()
 countChunksI log = I.liftI (step 0)

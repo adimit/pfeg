@@ -116,21 +116,22 @@ process session = do
     logChan <- atomically newTChan
     _debLthread_id <- forkIO . forever $ pfegLogger (debugLog session) (getStatsLog session) logChan
     let log = atomically . writeTChan logChan
+        res = cardRegexes session
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertText
           let it = documentIteratee (recordDocsF tchan s)
-          workOnCorpora "record" tchan documentI it session () cs
+          workOnCorpora "record" tchan (documentI res)it session () cs
         Learn{ corpora = cs } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF chan)
-          workOnCorpora "match" tchan documentI it session 0 cs
+          workOnCorpora "match" tchan (documentI res) it session 0 cs
         Predict { corpora = cs } -> do
           chan <- newChan
           -- TODO: fork a score thread
           let it = itemIteratee (getSentenceItems (`elem` targets session)) (predictF chan)
-          workOnCorpora "predict" tchan documentI it session () cs
+          workOnCorpora "predict" tchan (documentI res) it session () cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
     atomically $ do
@@ -140,11 +141,11 @@ process session = do
               dbthreadIsDone _ = False
 
 -- | debugging function for the REPL
-generateItems :: Converter -> FilePath -> IO [Item Text]
-generateItems conv fp = do
+generateItems :: Regexes -> Converter -> FilePath -> IO [Item Text]
+generateItems res conv fp = do
     let ig = getSentenceItems (`elem` T.words "auf in am")
     liftM concat $
-        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream documentI) (I.joinI $ I.mapChunks ig I.getChunks))
+        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream (documentI res)) (I.joinI $ I.mapChunks ig I.getChunks))
 
 type Logger = LogMessage -> IO ()
 
