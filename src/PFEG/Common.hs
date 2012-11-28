@@ -1,4 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns, DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- The Nullable instances for Text
+                                      -- here are a necessary evil
 module PFEG.Common
     ( -- * Measuring execution times and logging
       doTimed
