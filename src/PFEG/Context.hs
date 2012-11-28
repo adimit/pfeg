@@ -8,6 +8,8 @@ module PFEG.Context
       -- * Transformation functions
     , restrictContext
     , getSentenceItems
+      -- Misc
+    , period -- a token representing a period
     ) where
 
 import PFEG.Types
@@ -18,6 +20,9 @@ import Data.List (findIndices)
 
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
+
+period :: Token Text
+period = Word { surface = ".", lemma = ".", pos = "$." }
 
 data Context a = Context { left  :: ![a]
                          , right :: ![a]
@@ -32,8 +37,8 @@ getContexts p s = map (mkContext . flip splitAt s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = concatMap (getContexts (p.surface) . filter (not.punctuation))
-    where punctuation t = surface t `elem` [".",",","?","!"]
+getSentenceItems p = concatMap (getContexts (p.surface) . (period:) . filter (not.punctuation))
+    where punctuation t = surface t `elem` [","]
 
 type Restriction = (Int,Int)
 

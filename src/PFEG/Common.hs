@@ -85,11 +85,13 @@ normalize :: Text -> Text
 normalize = filterPoop . X.toCaseFold
 
 filterPoop :: Text -> Text
-filterPoop x | x `elem` [".","?","!"] = x 
+filterPoop x | x `elem` [".","?","!"] = "."
              | otherwise = X.filter (`elem` ['a'..'z'] ++ "äöüß-.") x
 
 documentP :: Regexes -> Parser (Document Text)
-documentP res = liftM (filter (not.null)) $ textURLP *> sentenceP res `A.manyTill` A.string "</text>\n"
+documentP res = do (s:ss) <- liftM (filter (not.null)) $ textURLP *> sentenceP res `A.manyTill` A.string "</text>\n"
+                   return ((period:s):ss)
+
 textURLP :: Parser Text
 textURLP = "<text id=\"" A..*> A.takeWhile (/= '"') A.<*. "\">\n"
 
