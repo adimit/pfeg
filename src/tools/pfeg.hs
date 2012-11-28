@@ -5,7 +5,7 @@ import Data.List.Split (chunksOf)
 import Data.Text.ICU.Convert
 import System.Locale
 import qualified Data.HashMap.Strict as M
-import Data.Time.Clock (getCurrentTime,NominalDiffTime)
+import Data.Time.Clock (diffUTCTime,getCurrentTime,NominalDiffTime)
 import Data.Time.Format
 import Data.Time.LocalTime
 import qualified Text.Search.Sphinx.Types as Sphinx
@@ -513,6 +513,7 @@ wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 workOnCorpora :: Nullable a => Text -> TBChan DBAction -> I.Iteratee Text (PFEG st) a -> I.Iteratee a (PFEG st) () -> PFEGConfig -> st -> [Corpus] -> IO ()
 workOnCorpora action tchan it1 it2 session st = mapM_ $ \ c@(cName,cFile) -> do
     (threadID,logVar) <- evalPFEG (forkLogger c) () session
+    timeStarted <- getCurrentTime
     let iteratee = I.run =<< enumFile (chunkSize session) cFile (I.sequence_
                    [ countChunksI logVar
                    , I.mapChunks (toUnicode (corpusConverter session)) I.><> I.convStream it1 I.=$ it2])
@@ -520,7 +521,8 @@ workOnCorpora action tchan it1 it2 session st = mapM_ $ \ c@(cName,cFile) -> do
     atomically $ writeTBChan tchan (Log (T.unwords [action,"start"]) c)
     _ <- execPFEG iteratee st session
     killThread threadID
-    putStrLn $ "Finished " ++ cName
+    timeFinished <- getCurrentTime
+    putStrLn $ "Finished " ++ cName ++ " in " ++ renderS (timeFinished `diffUTCTime` timeStarted)
     -- log to db that we're finished here and commit
     atomically $ do writeTBChan tchan (Log (T.unwords [action,"end"]) c)
                     writeTBChan tchan Commit
