@@ -3,10 +3,8 @@ module Main where
 
 import Data.List.Split (chunksOf)
 import Data.Text.ICU.Convert
-import System.Locale
 import qualified Data.HashMap.Strict as M
 import Data.Time.Clock (diffUTCTime,getCurrentTime,NominalDiffTime)
-import Data.Time.Format
 import Data.Time.LocalTime
 import qualified Text.Search.Sphinx.Types as Sphinx
 import Text.Search.Sphinx.Types (QueryResult(..))
@@ -84,7 +82,7 @@ dbthread conn chan = go
               logStatement <- prepare conn insertAction
               t <- getCurrentTime
               tz <- getCurrentTimeZone
-              let t' = formatTime defaultTimeLocale "%Y-%B-%d" $ utcToLocalTime tz t
+              let t' = show $ utcToLocalTime tz t
               void $ execute logStatement [toSql event, toSql name, toSql fp, toSql t']
 
 main :: IO ()

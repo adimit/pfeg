@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS pfeg_de.records
 CREATE TABLE IF NOT EXISTS pfeg_de.log
     ( id INTEGER UNSIGNED PRIMARY KEY NOT NULL AUTO_INCREMENT
     , action VARCHAR(20)
-    , completed DATE
+    , completed VARCHAR(25)
     , version VARCHAR(10)
     , corpusname VARCHAR(20)
     , corpusfile VARCHAR(200)
