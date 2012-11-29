@@ -82,10 +82,12 @@ parsePattern = do
     w <- option 1.0 parseWeight
     return MatchPattern { level = lvl, left = l, right = r, tolerance = read tol, weight = w }
 
-makeQuery :: C.Context (Token Text) -> MatchPattern -> Text -> Text
-makeQuery cxt' p t =
+makeQuery :: C.Context (Token Text) -> MatchPattern -> Text -> Maybe Text
+makeQuery cxt' p t | (length . C.left $ cxt') <= (size . left $ p) &&
+                     (length . C.right $ cxt') <= (size . right $ p) =
     let C.Context { C.left = leftContext, C.right = rightContext} = retrieveWords' cxt' p
-    in T.unwords [renderLevel (level p), T.concat [wrap '"' (T.unwords (leftContext ++ t:rightContext)), renderTolerance (tolerance p)]]
+    in Just $ T.unwords [renderLevel (level p), T.concat [wrap '"' (T.unwords (leftContext ++ t:rightContext)), renderTolerance (tolerance p)]]
+makeQuery _ _ _ = Nothing
 
 retrieveWords' :: Context (Token a) -> MatchPattern -> Context a
 retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)

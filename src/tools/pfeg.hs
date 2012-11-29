@@ -160,7 +160,7 @@ learnF resLog i = do
     session <- ask
     modify' (+1)
     itemNumber <- get
-    (ts,queries) <- mapAndUnzipM (execSecond querify) [ ((targ,pat),Pat.makeQuery (snd i) pat targ) 
+    (ts,queries) <- liftM (unzip . maybePat) . mapM (execSecond querify) $ [ ((targ,pat),Pat.makeQuery (snd i) pat targ) 
                                                  | pat <- matchPatterns session
                                                  , targ <- targets session ]
     liftIO $ do
@@ -169,6 +169,9 @@ learnF resLog i = do
         case errmsg of
             Just err -> putStrLn $ "FAILED TO GET RESULTS: " ++ T.unpack err
             Nothing -> writeChan resLog $ QueryData itemNumber i (queries,ts,results) time
+
+maybePat :: [(t,Maybe q)] -> [(t,q)]
+maybePat ls = [ (t,pat) | (t,Just pat) <- ls]
 
 runQueriesChunked :: Configuration -> [Query] -> IO (Sphinx.Result [QueryResult])
 runQueriesChunked conf qs' =
@@ -190,9 +193,10 @@ execSecond :: Monad m => (a -> m b) -> (c,a) -> m (c,b)
 execSecond k (c,a) = liftM (c,) (k a)
 
 -- FIXME: remove querify, or make it simpler.
-querify :: Text -> PFEG st Query
-querify q = do index <- liftM sphinxIndex ask
-               return Query { queryString = q, queryIndexes = index, queryComment = T.empty }
+querify :: Maybe Text -> PFEG st (Maybe Query)
+querify (Just q) = do index <- liftM sphinxIndex ask
+                      return $ Just Query { queryString = q, queryIndexes = index, queryComment = T.empty }
+querify Nothing = return Nothing
 
 type QueryChan = Chan QueryData
 
