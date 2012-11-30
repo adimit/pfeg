@@ -68,15 +68,15 @@ instance NullPoint Text where
 restrictContextToPattern :: MatchPattern -> Context a -> Context a
 restrictContextToPattern p = restrictContext (patternRestriction p)
 
-doTimed :: IO a -> IO (a,NominalDiffTime)
+doTimed :: MonadIO m => m a -> m (a,NominalDiffTime)
 doTimed f = do
-    start  <- getCurrentTime
+    start  <- liftIO getCurrentTime
     result <- f
-    end    <- getCurrentTime
+    end    <- liftIO getCurrentTime
     return (result, end `diffUTCTime` start)
 
-doTimed_ :: IO () -> IO NominalDiffTime
-doTimed_ f = fmap snd (doTimed f)
+doTimed_ :: MonadIO m => m () -> m NominalDiffTime
+doTimed_ f = doTimed f >>= return.snd
 
 renderS :: NominalDiffTime -> String
 renderS = renderSecs.round
