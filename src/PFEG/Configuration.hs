@@ -56,6 +56,7 @@ data PFEGConfig = PFEGConfig
     , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: Text
     , sphinxIndex      :: Text
+    , searchConf       :: S.Configuration
     , cardRegexes      :: Regexes
     , debugLog         :: Handle -- ^ Write debug information to this log
     , chunkSize        :: Int -- ^ Chunk size for the Iteratee
@@ -63,10 +64,8 @@ data PFEGConfig = PFEGConfig
 
 data ModeConfig = Record { corpora     :: [Corpus] }
                 | Learn  { corpora     :: [Corpus]
-                         , searchConf  :: S.Configuration
                          , statLog   :: Handle }
-                | Predict { corpora    :: [Corpus]
-                          , searchConf :: S.Configuration }
+                | Predict { corpora    :: [Corpus] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
@@ -130,18 +129,17 @@ initialize modeString cfg = do
             test  <- getCorpusSet cfg "tasks" "learn"
             resL  <- openHandle AppendMode cfg "main" "statLog"
             return Learn { corpora    = test
-                         , searchConf = defaultSearchConf shost sport 
                          , statLog  = resL }
       RunRecord -> do
             train <- getCorpusSet cfg "tasks" "record"
             return Record { corpora = train }
       RunPredict -> do
             predict <- getCorpusSet cfg "tasks" "predict"
-            return Predict { corpora    = predict
-                           , searchConf = defaultSearchConf shost sport }
+            return Predict { corpora    = predict }
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
+                            , searchConf = defaultSearchConf shost sport 
                             , cardRegexes      = Regexes { numeralRegex = numrRE
                                                          , dateRegex = dateRE
                                                          , timeRegex = timeRE
