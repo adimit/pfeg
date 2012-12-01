@@ -1,6 +1,7 @@
-{-# LANGUAGE TupleSections, FlexibleInstances, TypeSynonymInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor, TupleSections, FlexibleInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-} -- holy language extensions batman.
 module Main where
 
+import qualified Control.Monad.Trans.Either as E
 import Data.List.Split (chunksOf)
 import Data.Text.ICU.Convert
 import qualified Data.HashMap.Strict as M
@@ -25,7 +26,6 @@ import PFEG.Context
 import Prelude hiding (log)
 
 import Data.List (sortBy,intercalate)
-import qualified Data.List as L
 
 import Data.Function (on)
 
@@ -123,13 +123,13 @@ process session = do
         Learn{ corpora = cs } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF chan)
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF qg chan)
+              qg = generateCohortQueries (sphinxIndex session) $ makeCohorts (targets session) (matchPatterns session)
           workOnCorpora "match" tchan (documentI res) it session 0 cs
         Predict { corpora = cs } -> do
-          chan <- newChan
-          -- TODO: fork a score thread
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (predictF chan)
-          workOnCorpora "predict" tchan (documentI res) it session () cs
+          let it = itemIteratee (getSentenceItems (`elem` targets session)) (predictF qg log)
+              qg = generateCohortQueries (sphinxIndex session) $ makeCohorts (targets session) (matchPatterns session)
+          workOnCorpora "predict" tchan (documentI res) it session initialScore cs
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
     atomically $ do
@@ -147,28 +147,119 @@ generateItems res conv fp = do
 
 type Logger = LogMessage -> IO ()
 
-predictF :: QueryChan -> ItemProcessor_
-predictF = undefined
+newtype Cohort a = Cohort { extractCohort :: (Pat.MatchPattern,[(Text,a)]) }
+                   deriving (Functor,Show)
+
+-- | From a list of targets and patterns, generate all cohorts, sorted by
+-- pattern weight. 
+makeCohorts :: [Text] -> [Pat.MatchPattern] -> [Cohort ()]
+makeCohorts ts = map (\p -> Cohort . (p,) $ zip ts (repeat ())) . sortBy (flip compare `on` Pat.weight)
+
+data Prediction = Baseline { pattern :: !Pat.MatchPattern }
+                | Winner { predictedWord :: !Text, hits :: !Int, pattern :: !Pat.MatchPattern } deriving Show
+
+winner :: Cohort Int -> Prediction
+winner (Cohort (pat,[])) = Baseline pat
+winner (Cohort (pat,counts)) = case head . sortBy (flip compare `on` snd) $ counts of
+                                 (_,0) -> Baseline pat
+                                 (t,c) -> Winner t c pat
+
+-- THIIIISS IIIIS… really slow.
+attack :: Cohort Query -> PFEG st Prediction
+attack (Cohort (p,qs)) = do
+    session <- ask
+    (counts,warning) <- liftIO $ liftM getCounts $ runQueries (searchConf session) (map snd qs)
+    -- TODO log the warning
+    return $ winner $ Cohort (p,zipWith (\ (t,_) r -> (t,r)) qs counts)
+
+getCounts :: Sphinx.Result [QueryResult] -> ([Int],Text)
+getCounts (Sphinx.Ok a)        = (map total a,T.empty)
+getCounts (Sphinx.Warning t a) = (map total a,t)
+getCounts (Sphinx.Error err t) = ([],T.intercalate ": " [T.pack (show err),t])
+getCounts (Sphinx.Retry t)     = ([],t)
+
+makeQueries :: Text -> Context (Token Text) -> Cohort () -> Maybe (Cohort Query)
+makeQueries index cxt (Cohort (p,ch))
+    | (length . left $ cxt) <= (Pat.size . Pat.left $ p) &&
+      (length . right $ cxt) <= (Pat.size . Pat.right $ p) = Just . Cohort . (p,) $
+        map (\(t,_) -> (t,Query { queryIndexes = index
+                                  , queryComment = T.empty
+                                  , queryString = Pat.makeQuery cxt p t})) ch
+    | otherwise = Nothing
+
+generateCohortQueries :: Text -> [Cohort ()] -> Context (Token Text) -> [Cohort Query]
+generateCohortQueries index cohorts ctx = mapMaybe (makeQueries index ctx) cohorts
+
+type QueryGenerator = Context (Token Text) -> [Cohort Query]
+
+isBaseline :: Prediction -> Bool
+isBaseline Baseline { } = True
+isBaseline _ = False
+
+
+
+predictF :: QueryGenerator -> Logger -> ItemProcessor Score
+predictF qg log (target,context) = do
+    modify' (\s -> s { totalItems = totalItems s + 1 } )
+    let cohorts = qg context
+    p <- liftM (fmap (const ())) . E.runEitherT . mapM (\c -> lift (attack c) >>= \r -> if isBaseline r then E.right () else E.left r) $ cohorts
+    (success,prediction) <- score p (surface target)
+    s <- get
+    liftIO $ do
+        log . Status . T.intercalate "\t" . map T.pack $
+            [ show $ totalItems s
+            , if success then "Correct" else "Incorrect"
+            , T.unpack $ surface target -- lol.
+            , T.unpack prediction
+            , show $ correctItems s
+            , show $ fromIntegral (correctItems s) / (fromIntegral (totalItems s) :: Double)
+            , show $ baselineFallbacks s
+            , show $ baselineCorrect s
+            , show $ M.foldl' (+) 1 (truePositives s)
+            , show $ M.foldl' (+) 1 (falsePositives s) ]
+        log . Status . T.pack . show . M.toList $ truePositives s
+        log . Status . T.pack . show . M.toList $ falsePositives s
+
+score :: Either Prediction () -> Text -> PFEG Score (Bool,Text)
+score (Right _) target = do
+    mb <- liftM majorityBaseline ask
+    if target == mb
+       then modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1
+                        , baselineCorrect   = baselineCorrect s + 1
+                        , correctItems      = correctItems s + 1 }) >> return (True,mb)
+       else modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1 }) >> return (False,mb)
+score (Left w) target =
+    if target == predictedWord w
+        then modify' (\s -> s { correctItems = correctItems s + 1
+                              , truePositives = M.insertWith (+) (pattern w) 1 $ truePositives s }) 
+                    >> return (True,predictedWord w)
+        else modify' (\s -> s { falsePositives = M.insertWith (+) (pattern w) 1 $ falsePositives s })
+                    >> return (False,predictedWord w)
+
+initialScore :: Score
+initialScore = Score { totalItems        = 0
+                     , correctItems      = 0
+                     , baselineFallbacks = 0
+                     , baselineCorrect   = 0
+                     , truePositives     = M.empty
+                     , falsePositives    = M.empty }
+
+data Score = Score { totalItems        :: !Int
+                   , correctItems      :: !Int
+                   , baselineFallbacks :: !Int
+                   , baselineCorrect   :: !Int -- Don't *need* this, but it makes life easier.
+                   , truePositives     :: M.HashMap Pat.MatchPattern Int
+                   , falsePositives    :: M.HashMap Pat.MatchPattern Int }
 
 type ItemNumber = Integer
 
--- There's some pretty unholy zipping and unzipping and tupling and
--- untupling going on here, which *could* be a performance hog. Or not.
--- Maybe we could factor that out into a separate thread.
-learnF :: QueryChan -> ItemProcessor ItemNumber
-learnF resLog i = do
-    session <- ask
+learnF :: QueryGenerator -> QueryChan -> ItemProcessor ItemNumber
+learnF qg resLog i = do
     modify' (+1)
     itemNumber <- get
-    (ts,queries) <- liftM (unzip . maybePat) . mapM (execSecond querify) $ [ ((targ,pat),Pat.makeQuery (snd i) pat targ) 
-                                                 | pat <- matchPatterns session
-                                                 , targ <- targets session ]
-    liftIO $ do
-        (results',time) <- doTimed $ runQueriesChunked (searchConf.pfegMode $ session) queries
-        let (results,errmsg) = getQueryResults results'
-        case errmsg of
-            Just err -> putStrLn $ "FAILED TO GET RESULTS: " ++ T.unpack err
-            Nothing -> writeChan resLog $ QueryData itemNumber i (queries,ts,results) time
+    let cohorts = qg $ snd i
+    (preds,time) <- doTimed $ mapM attack cohorts
+    liftIO $ writeChan resLog $ QueryData itemNumber i preds time
 
 maybePat :: [(t,Maybe q)] -> [(t,q)]
 maybePat ls = [ (t,pat) | (t,Just pat) <- ls]
@@ -203,27 +294,9 @@ type QueryChan = Chan QueryData
 data QueryData = QueryData
     { qItemNumber :: !Integer
     , qItem       :: !(Item Text)
-    , qResults    :: ([Query],[(Text,Pat.MatchPattern)],[QueryResult])
+    , qResults    :: [Prediction]
     , qTime       :: !NominalDiffTime }
     deriving (Show)
-
-initialPredictScore, initialMatchScore :: Score
-initialPredictScore = PredictScore 0 0 0 0 0 0 0 0 0 0
-initialMatchScore = MatchScore 0 0
-
-tickScore :: (MonadState Score m) => m ()
-tickScore = modify' $ \ s -> s { totalScored = totalScored s+1 }
-
-score :: Maybe Text -> Item Text -> PFEG Score Score
-score p i = do
-    mB <- liftM majorityBaseline ask
-    let isCorrect = case p of
-                         Nothing -> mB == surface (fst i)
-                         Just x  -> x == surface (fst i)
-    oldScore <- get
-    if isCorrect
-       then return $ oldScore { scoreCorrect = scoreCorrect oldScore + 1, totalScored = totalScored oldScore + 1 }
-       else return $ oldScore { totalScored = totalScored oldScore + 1 }
 
 bs :: LB.ByteString -> Text
 bs = decodeUtf8 . SB.concat . LB.toChunks
@@ -248,24 +321,29 @@ retrieveSentences conn response = do
     return $ unzip ids'n'sentences
 
 learnLogger :: Logger -> QueryChan -> PFEG_ ()
-learnLogger log c = liftIO $ do
-    (QueryData itemNumber item (queries,ts,results') time) <- readChan c
-    log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
-    let results = map total results'
-        preds = concatMap (correctness $ surface . fst $ item) $ L.groupBy (\((_,a),_) ((_,b),_) -> a == b) $ zip ts results
-    mapM_ (logLine itemNumber time item) $ L.zip4 queries ts results preds
-    where  logLine itemNumber time (target,context) (q,(predic,patt),res,correctPred) =
-             let ctxt = fmap surface context
-             in  log $ Stats [ T.pack $ show itemNumber
-                             , T.unwords . left $ ctxt
-                             , surface target
-                             , T.unwords . right $ ctxt
-                             , queryString q
-                             , T.pack . Pat.showShort $ patt
-                             , predic
-                             , T.pack . show $ res
-                             , T.pack . show . (round :: NominalDiffTime -> Integer) $ time
-                             , correctPred ]
+learnLogger log c = do
+        session <- ask
+        (QueryData itemNumber (target,context) preds time) <- liftIO $ readChan c
+        liftIO . log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
+        let ctxt = fmap surface context
+            isCorrect Baseline { } = corr $ (majorityBaseline session) == surface target
+            isCorrect Winner { predictedWord = w } = corr $ w == surface target
+            corr False = "Incorrect"
+            corr True = "Correct"
+            prediction Baseline { } = majorityBaseline session
+            prediction Winner { predictedWord = w } = w
+            predictionCounts Baseline { } = T.pack $ show (0 :: Int)
+            predictionCounts Winner { hits = h } = T.pack $ show h
+            line p = [ T.pack $ show itemNumber
+                        , T.unwords . left $ ctxt
+                        , surface target
+                        , T.unwords . right $ ctxt
+                        , T.pack . Pat.showShort . pattern $ p
+                        , isCorrect p
+                        , prediction p
+                        , predictionCounts p
+                        , T.pack . show . (round :: NominalDiffTime -> Integer) $ time ]
+        mapM_ (liftIO . log . Stats . line) $ preds
 
 correctness :: Text -> [((Text,Pat.MatchPattern),Int)] -> [Text]
 correctness target ls = let p = cr . head . sortBy (flip compare `on` snd) $ ls
@@ -431,26 +509,6 @@ queryDB conn ids = do
           sqlw :: SqlValue -> [Text]
           sqlw = T.words . fromSql
 
-scoreboard :: Score -> [String]
-scoreboard s@MatchScore { }   = map show (zipWith ($) [totalScored, scoreCorrect] (repeat s))
-scoreboard s@PredictScore { } = map show (zipWith ($) 
-                                          ([totalScored, scoreCorrect] ++ canonicalPredictScore)
-                                          (repeat s))
-
-canonicalPredictScore :: [Score -> Int]
-canonicalPredictScore = [ scoreAAA
-                        , scoreAAB
-                        , scoreABA
-                        , scoreABB
-                        , scoreABC
-                        , scoreAAAContained
-                        , scoreAABContained
-                        , scoreABBContained ]
-
--- first three predictions
-predictions :: Prediction -> [String]
-predictions ps = take 6 $ concatMap (\ (a,b) -> [T.unpack a,show b] ) ps ++ repeat ""
-
 untext :: [Text] -> String
 untext = T.unpack . T.unwords
 
@@ -458,29 +516,6 @@ next, correct :: MonadState MatcherState m => m ()
 next    = modify' $ \ (MatcherState t c) -> MatcherState (t+1) c
 correct = modify' $ \ (MatcherState t c) -> MatcherState t (c+1)
 
-data Score = PredictScore { totalScored       :: !Int
-                          , scoreAAA          :: !Int
-                          , scoreAAB          :: !Int
-                          , scoreABA          :: !Int
-                          , scoreABB          :: !Int
-                          , scoreABC          :: !Int
-                          , scoreAAAContained :: !Int
-                          , scoreAABContained :: !Int
-                          , scoreABBContained :: !Int
-                          , scoreCorrect :: !Int }
-           | MatchScore   { totalScored  :: !Int
-                          , scoreCorrect :: !Int }
-
-instance Show Score where
-    show s = '(':show (scoreCorrect s) ++ "/" ++ show (totalScored s) ++ ") " ++
-             case s of
-                  MatchScore { } -> ""
-                  PredictScore { } -> intercalate ", " $ zipWith f 
-                                      ["aaa","aab","aba","abb","abc","aaaC","aabC","abbC"]
-                                      canonicalPredictScore
-                        where f name scr = name ++ ": " ++ show (scr s)
-
-type Prediction = [(Text,Int)]
 data MatcherState = MatcherState { totalMatches :: !Int, correctMatches :: !Int }
 
 parseResult :: QueryResult -> [DocId]

@@ -40,6 +40,7 @@ Executable pfeg
     Build-Depends: base
                  , parsec >= 3.1.2
                  , sphinx == 0.6.*
+                 , either == 3.0.*
                  , hashable == 1.1.*
                  , unordered-containers == 0.2.*
                  , text == 0.11.*
