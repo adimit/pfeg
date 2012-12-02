@@ -1,13 +1,14 @@
 module PFEG.SQL
     ( insertAction
     , upsertRecord
-    , item2SQL
+    , sentence2SQL
+    , insertText
+    , document2SQL
     ) where
 
 import Database.HDBC
 
 import PFEG.Types
-import PFEG.Context
 
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -22,7 +23,22 @@ insertAction = "INSERT INTO log (action,corpusname,corpusfile,completed,version)
 upsertRecord :: String
 upsertRecord = "INSERT INTO records (lcs,rcs,lcl,rcl,target) VALUES (?,?,?,?,?)"
 
-item2SQL :: Item Text -> [SqlValue]
-item2SQL Item { itemLemma = (Context ll rl) , itemSurface = (Context ls rs), target = t } =
-    [ tsql ls, tsql rs, tsql ll, tsql rl, toSql (surface t) ]
-    where tsql = toSql . T.unwords
+insertText :: String
+insertText = "INSERT INTO records (surface,lemma) VALUES (?,?)"
+
+insertSentenceHash :: String
+insertSentenceHash = "INSERT IGNORE INTO hashes VALUES (UNHEX(SHA1(?)))"
+
+selectSentenceHash :: String
+selectSentenceHash = "SELECT HEX(b) FROM hashes WHERE b = UNHEX(SHA1(?))"
+
+-- | Prepare a @Sentence Text@ for use with @insertText@.
+sentence2SQL :: Sentence Text -> [SqlValue]
+sentence2SQL s = [sqlify surface, sqlify lemma]
+    where sqlify x = toSql . T.unwords . fmap x $ s
+
+-- | Prepare a @Document Text@ for use with @insertText@
+document2SQL :: Document Text -> [SqlValue]
+document2SQL t = [sqlify surface, sqlify lemma]
+    where sqlify x = toSql . T.unwords . map (T.unwords . fmap x) $ t
+

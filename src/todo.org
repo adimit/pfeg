@@ -1,0 +1,95 @@
+* Done
+  - fix surface lemma switcheroo. done (23:36, Jul 20)
+  - Re-enable logging of db actions
+  + Log start and finish events for record
+  + Move recordF to dbthread
+  - Find out what we're doing
+  - Find a way to disable incremental commits in mysql and instead commit in
+    the end (a specialized DBAction Commit would be spiffy)
+  - see if we can ditch the cmd TMVar and just peek into TBChan's size
+  - Populate the db with record 12:53, Jul 19
+  - debug that read timeout during indexing. Increase mysql tolerance or so. dunno. 12:53, Jul 19
+  - fix search syntax errors -- when the left context is empty, we generate
+    "@surface" <<< "@surface bla" which doesn't make sense. Remove the first surface and <<< in that case. (probably also in case the right context is empty) 00:12, Jul 20
+  - fix sql syntax error 00:12, Jul 20
+  - make a matcher test run 00:12, Jul 20
+  - We get a problem in findTarget if either left or right are [] 00:52, Jul 21
+  - fix bug in ShortestMatch (I guess the tests were leaky?) 00:52, Jul 21
+  - don't query on empty ids. 01:08, Jul 21
+  - fix config file pattern parsing mechanism. it currently only parses the first pattern
+  - logger: properly print newlines.
+  - logger: only log docids for the query results
+  - logger: the item doesn't seem to get logged?
+  - logger: pair the actual sent queries with the match pattern
+  - it would be nice to visualize all the steps that happen during matching
+  - Maybe we do need a centralized logging thread after all?
+  - items in debug log aren't in order. 14:22, Jul 23
+  - also print docids to log 14:22, Jul 23
+  - docid/sentence pairings seem to be wrong 14:59, Jul 23
+  - "forum für politische" doesn't give us any predictions, which
+    doesn't seem right: PFEG.Pattern is instructing PFEG.ShortestMatch
+    to use equality comparisons on the entire Token, which will
+    naturally fail when we want only lemma matches. Need to fix that.
+  - fix PFEG.Pattern to only use lemma or surface depending on the
+    MatchPattern it was given
+* Doing
+* To-Do
+  - add targets into the search. Wouldn't that slow us down a lot?
+  - analyse the log. We seme to get weird predictions sometimes
+  - the lemma patterns really suck, and they seem to be *preferred*, which is
+  - lemma uses @card@ in the queries, but we probably can't look for that!
+  - we're definitely not handling baseline right
+    wrong. What's going on?
+  - on (or after) item 485 we get Something is catastrophically wrong again.
+  - Context ([],[einen,blick]) gives us prediction "von". WTH?
+  - we seem to not be writing anything when no match is found (i.e. check if
+    baseline matches are doing what they're supposed to be doing.)
+  - it might make sense to put in beginning or end-of-sentence operators in
+    case left or right contexts are empty.
+  - Find a way to utilize the dbthread for match mode, too.
+    (use IO continuations which put the result in a return variable. like callbacks.)
+  - increase the amount of sentences we're fetching
+  - refactor pfeg.hs. Too much stuff in one  file
+  - ideally, PFEG monad would be in STM, not in IO
+  - download the english wac corpus
+* Notes
+** Search Engine
+*** Stopwords
+    Having stopwords is kinda silly, but I don't see a way around it for now.
+** Tasks
+*** DONE (for now) Find the best (most efficient?) way of searching the indexes
+    It seems that there is no way (at all!) to stop tags from adding positional
+    information to the index (maybe that'd be worth a bug report.)
+    This means that we could keep a base proximity query value of ~1 for every
+    query, which increases by *2* for every target word that is not the current
+    item's target.
+
+    Might this cause problems?
+
+    Could we just escape this by making t a stop word, then setting stopword step to 0?
+
+    Maybe we should squash all pronouns into one pronoun?
+
+    CHECK WHETHER WE CAN USE THE NEAR OPERATOR NOW INSTEAD OF <<
+
+*** Recode matchF and friends
+    - matchF needs to get Context (Token Text) instead of Item
+    - Bury the Item type (it doesn't seem to be needed anymore
+    - check whether PFEG.Pattern produces valid sphinx patterns (maybe also write unit tests!)
+    - 
+*** Ideas
+    - Tag sfc forms with prepositions to distinguish canNN and canV and similar
+    homophonic but different-part-of-speech words in English.
+    - Don't count stuff server-side in searchd, but get the docids, the retrieve
+    documents and count everything in pfeg itself, so we can also do advanced
+    matches that searchd doesn't support.
+    - Only allow certain kinds of words (pos) to be inserted with the proximity
+    operator ~n (like adjectives, adverbs, etc, pre/circum-whatever positions.
+    It's rule based, but it might improve performance.)
+    - Implement asymmetric backoff (this needs trivial changes to the pattern
+    data type.)
+    - Find most effective patterns (with R?) and then change how a "correct"
+    match is found to make it prefer effective patterns.
+    - (Optional) Train logistic regression or SVM to give a confidence measure.
+    - Implement some sort of frequency measure for words in matches, tf or so.
+    - add hashes back into the mix so we don't have duplicate documents?

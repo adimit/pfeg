@@ -1,13 +1,14 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings, GeneralizedNewtypeDeriving #-}
 module PFEG.Configuration
     ( ConfigError
+    , Regexes(..)
     , Corpus
     , PFEGConfig(..)
     , ModeConfig(..)
     , configurePFEG
     , deinitialize ) where
 
-import Text.Search.Sphinx.Types (Sort(..),GroupByFunction(..),MatchMode(..))
+import Text.Search.Sphinx.Types (MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Control.Concurrent.Chan
 import Data.Ini.Types
@@ -20,6 +21,18 @@ import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
 import Control.Monad.Error
 import Data.List.Split (splitOn)
+import qualified PFEG.Pattern as Pat
+import Data.Either
+import qualified Text.Parsec as Parsec
+import Data.Text.ICU.Convert
+import Data.Text.ICU
+
+data Regexes = Regexes
+     { numeralRegex :: Regex -- ^ when tagged CARD and matching this, tokens are left as is
+     , dateRegex    :: Regex -- ^ when tagged CARD and matching this, surface is DATE
+     , timeRegex    :: Regex -- ^ when tagged CARD and matching this, surface is TIME
+     , cardTag :: Text -- ^ The pos tag that represents cardinalities
+     }
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -36,29 +49,30 @@ type Name = String
 type Corpus = (Name,FilePath)
 
 data PFEGConfig = PFEGConfig
-    { pfegMode   :: ModeConfig -- ^ Program mode specific configuration
-    , statusLine :: Chan Int -- ^ Status update channel
-    , database   :: Connection -- ^ The connection to the main database
-    , targets    :: [Text] -- ^ Targets for this run
-    , majorityBaseline :: String
-    , sphinxIndex :: String
-    , chunkSize  :: Int -- ^ Chunk size for the Iteratee
-    }
+    { pfegMode         :: ModeConfig -- ^ Program mode specific configuration
+    , statusLine       :: Chan Int -- ^ Status update channel
+    , database         :: Connection -- ^ The connection to the main database
+    , corpusConverter  :: Converter -- ^ Text.ICU input encoding converter
+    , targets          :: [Text] -- ^ Targets for this run
+    , majorityBaseline :: Text
+    , sphinxIndex      :: Text
+    , searchConf       :: S.Configuration
+    , cardRegexes      :: Regexes
+    , debugLog         :: Handle -- ^ Write debug information to this log
+    , chunkSize        :: Int -- ^ Chunk size for the Iteratee
+    , matchPatterns    :: [Pat.MatchPattern] }
 
-data ModeConfig = Record { corpora   :: [Corpus] }
-                | Match  { corpora   :: [Corpus]
-                         , searchConf:: S.Configuration
-                         , resultLog :: Handle }
-                | Predict { corpora  :: [Corpus]
-                          , searchConf:: S.Configuration
-                          , resultLog :: Handle }
+data ModeConfig = Record { corpora     :: [Corpus] }
+                | Learn  { corpora     :: [Corpus]
+                         , statLog   :: Handle }
+                | Predict { corpora    :: [Corpus] }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
 
-data RunMode = RunRecord | RunMatch | RunPredict
+data RunMode = RunRecord | RunLearn | RunPredict
 detectMode :: String -> Configurator RunMode
-detectMode "match" = return RunMatch
+detectMode "learn" = return RunLearn
 detectMode "record" = return RunRecord
 detectMode "predict" = return RunPredict
 detectMode x = throwError . GenericError $ "Unrecognized mode " ++ x
@@ -70,7 +84,8 @@ liftC m = C (lift m)
 deinitialize :: PFEGConfig -> IO ()
 deinitialize pfeg = do
     disconnect $ database pfeg
-    case pfegMode pfeg of m@Match{} -> hClose $ resultLog m
+    hClose $ debugLog pfeg
+    case pfegMode pfeg of m@Learn{} -> hClose $ statLog m
                           _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
@@ -97,43 +112,74 @@ initialize modeString cfg = do
     targs <- liftM splitAndStrip (getValue cfg "main" "targets")
     statC <- liftC newChan
     majB  <- getValue cfg "main" "majorityBaseline"
+    debL  <- openHandle AppendMode cfg "main" "debugLog"
     mode <- detectMode modeString
+    cardPOS <- getValue cfg "data" "cardtag"
+    dateRE <- parseRegex =<< getValue cfg "data" "dates"
+    timeRE <- parseRegex =<< getValue cfg "data" "times"
+    numrRE <- parseRegex =<< getValue cfg "data" "numerals"
     shost <- getValue cfg "sphinx" "host"
     sport <- liftM read $ getValue cfg "sphinx" "port"
     sindex <- getValue cfg "sphinx" "index"
+    encoding <- getValue cfg "data" "encoding"
+    conv <- liftC $ open encoding Nothing
+    pats <- getPatterns cfg "patterns" "patterns"
     runas <- case mode of
-                  RunMatch -> do
-                        test  <- getCorpusSet cfg "tasks" "match"
-                        resL  <- openHandle AppendMode cfg "main" "resultLog"
-                        return Match { corpora    = test
-                                     , searchConf = defaultSearchConf shost sport
-                                     , resultLog  = resL }
-                  RunRecord -> do
-                        train <- getCorpusSet cfg "tasks" "record"
-                        return Record { corpora = train }
-                  RunPredict -> do
-                        predict <- getCorpusSet cfg "tasks" "predict"
-                        resL <- openHandle AppendMode cfg "main" "predictLog"
-                        return Predict { corpora    = predict
-                                       , searchConf = defaultSearchConf shost sport
-                                       , resultLog  = resL }
-    liftIO $ putStrLn "Done."
-    return PFEGConfig { pfegMode   = runas
-                      , database   = db
-                      , statusLine = statC
-                      , sphinxIndex= sindex
-                      , targets    = targs
-                      , majorityBaseline = majB
-                      , chunkSize  = csize }
+      RunLearn -> do
+            test  <- getCorpusSet cfg "tasks" "learn"
+            resL  <- openHandle AppendMode cfg "main" "statLog"
+            return Learn { corpora    = test
+                         , statLog  = resL }
+      RunRecord -> do
+            train <- getCorpusSet cfg "tasks" "record"
+            return Record { corpora = train }
+      RunPredict -> do
+            predict <- getCorpusSet cfg "tasks" "predict"
+            return Predict { corpora    = predict }
+    let config = PFEGConfig { pfegMode         = runas
+                            , database         = db
+                            , statusLine       = statC
+                            , searchConf = defaultSearchConf shost sport 
+                            , cardRegexes      = Regexes { numeralRegex = numrRE
+                                                         , dateRegex = dateRE
+                                                         , timeRegex = timeRE
+                                                         , cardTag = T.pack cardPOS }
+                            , debugLog         = debL
+                            , sphinxIndex      = T.pack sindex
+                            , targets          = targs
+                            , corpusConverter  = conv
+                            , majorityBaseline = T.pack majB
+                            , matchPatterns    = pats
+                            , chunkSize        = csize }
+    liftIO $ do putStrLn "Done."
+                printConfig config
+    return config
+
+printConfig :: PFEGConfig -> IO ()
+printConfig c =
+    putStr $ "PFEG Configuration:\n" ++
+             "\tMajority baseline: " ++ T.unpack (majorityBaseline c) ++ "\n\
+             \\tTargets: " ++ unwords (map T.unpack (targets c)) ++ "\n\
+             \\tPatterns: " ++ (unlines . addSpaces) (map (unwords . map show) (makeBits 3 $ matchPatterns c)) ++ "\n\
+             \\t" ++ showMode (pfegMode c)
+    where addSpaces :: [String] -> [String]
+          addSpaces [] = []
+          addSpaces (h:t) = h:map ("\t          "++) t
+          makeBits :: Int -> [a] -> [[a]]
+          makeBits _ [] = []
+          makeBits n l  = let (h,t) = splitAt n l
+                          in h:makeBits n t
+
+showMode :: ModeConfig -> String
+showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
+    where mode = case c of Record  {} -> "PFEG is in RECORD mode\n"
+                           Learn   {} -> "PFEG is in LEARN mode\n"
+                           Predict {} -> "PFEG is in PREDICT mode\n"
 
 defaultSearchConf :: String -> Int -> S.Configuration
 defaultSearchConf shost sport = S.defaultConfig
      { S.host        = shost
      , S.port        = sport
-     , S.groupByFunc = Attr
-     , S.groupBy     = "target"
-     , S.sort        = AttrDesc
-     , S.sortBy      = "target"
      , S.mode        = Extended }
 
 splitAndStrip :: String -> [Text]
@@ -143,6 +189,16 @@ openHandle :: IOMode -> Config -> SectionName -> OptionName -> Configurator Hand
 openHandle mode cfg sec opt = do
     fname <- getValue cfg sec opt
     liftC $ openFile fname mode
+
+getPatterns :: Config -> SectionName -> OptionName -> Configurator [Pat.MatchPattern]
+getPatterns cfg sec name = do
+    pLocations <- liftM (map T.unpack . splitAndStrip) $ getValue cfg sec name
+    liftM concat (forM pLocations getPattern)
+    where getPattern n = do
+              ps <- liftM splitAndStrip (getValue cfg sec n)
+              let (errs,pats) = partitionEithers $ map (Parsec.parse Pat.parsePattern sec) ps
+              forM_ errs $ \err -> liftC (putStrLn $ "***\nWARNING: " ++ show err++"\n***")
+              return pats
 
 getCorpusSet :: Config -> SectionName -> OptionName -> Configurator [Corpus]
 getCorpusSet cfg sec opt = do
@@ -164,3 +220,9 @@ getValue cfg sec opt | hasSection sec cfg = case getOption sec opt cfg of
                                Nothing    -> throwError $ OptionNotSet sec opt
                      | otherwise          = throwError $ SectionNotPresent sec
 
+parseRegex :: OptionValue -> Configurator Regex
+parseRegex = fromEither . regex' [] . T.pack
+    where fromEither (Right r)  = return r
+          fromEither (Left err) = throwError . ParseError $ 
+            "Failed Regex parse: " ++ show err ++ "\nCheck " ++ url ++ " for regex syntax."
+          url = "http://userguide.icu-project.org/strings/regexp"

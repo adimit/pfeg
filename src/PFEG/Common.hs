@@ -1,120 +1,131 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns, DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- The Nullable instances for Text
+                                      -- here are a necessary evil
 module PFEG.Common
-    ( -- * Types
-      Wordcounts
-      -- * Measuring execution times and logging
-    , doTimed
+    ( -- * Measuring execution times and logging
+      doTimed
     , doTimed_
     , renderS
     , logger
-      -- * Attoparsec parsers for the TT-style corpora
-    , tokenP
+      -- * Attoparsec parsers for the WAC "XML" corpora
     , sentenceP
-      -- * Triplet operations (useful for @Word@
+    , documentP
+      -- * Triplet operations
     , fst3
     , snd3
     , trd3
       -- * Shared iteratees
     , countChunksI
-    , corpusI
+    , documentI
+    , ParseError(..)
       -- * Misc
-    , nullToken
+    , restrictContextToPattern
     , modify'
+      -- * Orphan Nullable instances for Text
+    , Text
     ) where
 
+import PFEG.Configuration
+import Data.Nullable
+import Data.NullPoint
+import Data.Typeable
+import Control.Exception
+import PFEG.Pattern
+import PFEG.Context
 import PFEG.Types
 import Data.Time.Clock
 import qualified Data.Text as X
 import Data.Text (Text)
-import Data.Text.Encoding (decodeUtf8)
 
 import Control.Monad.State.Strict
-import Data.Maybe (catMaybes)
+import Data.Maybe (isJust,catMaybes)
 
-import qualified Data.ByteString.Char8 as B
-import Data.ByteString (ByteString)
 import Control.Concurrent.Chan
-import Data.Attoparsec.Iteratee
 import Data.Iteratee.Base
 
 import System.Time.Utils (renderSecs)
 
 import qualified Data.Iteratee as I
 
-import qualified Data.Attoparsec as A
-import Data.Attoparsec (Parser)
+import qualified Data.Attoparsec.Text as A
+import Data.Attoparsec.Text (Parser)
 import Control.Applicative hiding (many)
-import Data.Word (Word8)
 
 import Prelude hiding (log)
 
 import GHC.IO.Handle (hFlush)
 import GHC.IO.Handle.FD (stdout)
 
-doTimed :: IO a -> IO (a,NominalDiffTime)
+import Data.Text.ICU (Regex,find)
+import Data.Text.Read (decimal)
+
+instance Nullable Text where
+    nullC = X.null
+
+instance NullPoint Text where
+    empty = X.empty
+
+restrictContextToPattern :: MatchPattern -> Context a -> Context a
+restrictContextToPattern p = restrictContext (patternRestriction p)
+
+doTimed :: MonadIO m => m a -> m (a,NominalDiffTime)
 doTimed f = do
-    start  <- getCurrentTime
+    start  <- liftIO getCurrentTime
     result <- f
-    end    <- getCurrentTime
+    end    <- liftIO getCurrentTime
     return (result, end `diffUTCTime` start)
 
-doTimed_ :: IO () -> IO NominalDiffTime
-doTimed_ f = fmap snd (doTimed f)
+doTimed_ :: MonadIO m => m () -> m NominalDiffTime
+doTimed_ f = doTimed f >>= return.snd
 
 renderS :: NominalDiffTime -> String
 renderS = renderSecs.round
 
-decode :: Parser ByteString -> Parser Text
-decode = liftM decodeUtf8
-
-tokenP :: Parser (Maybe (Token Text))
-tokenP = token <|> word
-    where token = do ts <- A.string (B.pack "-*-MASKED-*-") *>
-                        A.takeTill (\w -> char '-' w || char '\t' w) `A.sepBy` delimiter
-                     let (forms,_:orig) = break (==originalMarker) (map decodeUtf8 ts)
-                     finishToken (\p l -> Masked { pos = p
-                                                , lemma = l
-                                                , surface  = normalize (head forms)
-                                                , original = normalize (head orig)
-                                                , alternatives = map normalize (tail forms)})
-          word = do s <- decode $ A.takeTill (char '\t')
-                    finishToken (\p l -> Word { pos = p, lemma = l, surface = normalize s })
-          finishToken f = do p <- decode $ A.skip (char '\t') *> A.takeTill (char '\t')
-                             l <- decode $ A.skip (char '\t') *> A.takeTill (char '\n')
-                             A.skip (char '\n')
-                             if X.head p `elem` "$#`,:'()"
-                                then return Nothing
-                                else return . Just $ f p (normalize l)
-
 normalize :: Text -> Text
-normalize = ensureNotEmpty . filterPoop . X.toCaseFold
-
-delimiter :: Parser ByteString
-delimiter = A.string $ B.pack "-*-"
-
-originalMarker :: Text
-originalMarker = X.pack "ORG"
-
-nullToken :: Text
-nullToken = X.pack "NIX"
-
-ensureNotEmpty :: Text -> Text
-ensureNotEmpty t | t == X.empty = nullToken
-                 | otherwise   = t
+normalize = filterPoop . X.toCaseFold
 
 filterPoop :: Text -> Text
-filterPoop = X.filter (not.(`elem` "\"}{)([],"))
+filterPoop x | x `elem` [".","?","!"] = "."
+             | otherwise = X.filter (`elem` ['a'..'z'] ++ "äöüß-.") x
 
-sentenceP :: Parser (Sentence Text)
-sentenceP = return.catMaybes =<< tokenP `A.manyTill` A.word8 (c28 '\n') <* A.skipWhile (char '\n')
+documentP :: Regexes -> Parser (Document Text)
+documentP res = do (s:ss) <- liftM (filter (not.null)) $ textURLP *> sentenceP res `A.manyTill` A.string "</text>\n"
+                   return ((period:s):ss)
 
-char :: Char -> Word8 -> Bool
-char c = (==c28 c)
-{-# INLINE char #-}
+textURLP :: Parser Text
+textURLP = "<text id=\"" A..*> A.takeWhile (/= '"') A.<*. "\">\n"
 
-c28 :: Char -> Word8
-c28 = fromIntegral.fromEnum
-{-# INLINE c28 #-}
+sentenceP :: Regexes -> Parser (Sentence Text)
+sentenceP res = do
+    _ <- A.string "<s>\n"
+    ws <- wordP res `A.manyTill` A.string "</s>\n"
+    return . catMaybes $ ws
+
+wordP :: Regexes -> Parser (Maybe (Token Text))
+wordP res = do
+    s <- liftM normalize $ A.takeWhile (/= '\t') <* A.char '\t'
+    p <- A.takeWhile (/= '\t') <* A.char '\t'
+    l <- liftM normalize $ A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
+    return $! makeWord res Word { pos = p, surface = s, lemma = l }
+
+makeWord :: Regexes -> Token Text -> Maybe (Token Text)
+makeWord Regexes { cardTag = ct, numeralRegex = nre, timeRegex = tre, dateRegex = dre }
+         w@(Word { surface = s, pos = p }) 
+           | X.null s = Nothing
+           | p == ct && s `matches` tre = Just $ w { surface = "TIME", lemma = "TIME" }
+           | p == ct && s `matches` dre = Just $ w { surface = "DATE", lemma = "DATE" }
+           | p == ct && s `matches` nre = Just w
+           | p == ct && s `inRange` (1,12) = Just w
+           | p == ct = Just w { surface = "CARD", lemma = "CARD" }
+           | X.any (=='.') . X.init $ s = Nothing
+makeWord _ w = Just w
+
+inRange :: Text -> (Int,Int) -> Bool
+inRange t (l,u) = case decimal t of Right (a, t') -> X.null t' && l <= a && a <= u
+                                    _ -> False
+
+matches :: Text -> Regex -> Bool
+matches t re = isJust $ find re t
 
 fst3 :: (a,b,c) -> a
 fst3    (a,_,_) =  a
@@ -128,10 +139,10 @@ trd3 :: (a,b,c) -> c
 trd3    (_,_,c) =  c
 {-# INLINE trd3 #-}
 
-corpusI :: (Monad m) => I.Iteratee ByteString m (Sentence Text)
-corpusI = parserToIteratee sentenceP
+documentI :: (Monad m) => Regexes -> I.Iteratee Text m (Document Text)
+documentI res = parserToIteratee (documentP res)
 
-countChunksI :: (MonadIO m) => Chan Int -> I.Iteratee ByteString m ()
+countChunksI :: (MonadIO m, Nullable a) => Chan Int -> I.Iteratee a m ()
 countChunksI log = I.liftI (step 0)
     where step (!i) (Chunk _) = let i' = i+1
                                 in liftIO (writeChan log i') >> I.liftI (step i')
@@ -158,3 +169,35 @@ modify' f = do
     s <- get
     put $! f s
 
+-- The following is a verbatim copy of attoparsec-iteratee's code, but
+-- included here to make the parser conversion work with Attoparsec.Text
+-- parsers (the original works only with ByteString parsers.)
+-- We can't use ByteString parsers directly because of encoding issues.
+-- (Maybe we could anyway, but I don't care)
+
+data ParseError
+    = ParseError {errorContexts :: [String], errorMessage :: String}
+    deriving (Show, Typeable)
+
+instance Exception ParseError
+
+-- | A function to convert attoparsec 'Parser's into 'Iteratee's.
+parserToIteratee :: (Monad m) => Parser a -> Iteratee Text m a
+parserToIteratee p =
+    icont (f (A.parse p)) Nothing
+  where
+    f k (EOF Nothing) =
+        case A.feed (k X.empty) X.empty of
+          A.Fail _ err dsc -> I.throwErr (toException $ ParseError err dsc)
+          A.Partial _ -> I.throwErr (toException EofException)
+          A.Done rest v
+              | X.null rest -> idone v (EOF Nothing)
+              | otherwise -> idone v (Chunk rest)
+    f _ (EOF (Just e)) = I.throwErr e
+    f k (Chunk s)
+        | X.null s = icont (f k) Nothing
+        | otherwise =
+            case k s of
+              A.Fail _ err dsc -> I.throwErr (toException $ ParseError err dsc)
+              A.Partial k' -> icont (f k') Nothing
+              A.Done rest v -> idone v (Chunk rest)

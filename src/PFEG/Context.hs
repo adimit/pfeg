@@ -1,66 +1,47 @@
-{-# LANGUAGE FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable  #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module PFEG.Context
     ( -- * Types
       Context(..)
-    , Item(..)
+    , Item
     , ItemGetter
+    , Restriction
       -- * Transformation functions
-    , getItems
-    , getMaskedItems
-    , getMaskedItems'
+    , restrictContext
+    , getSentenceItems
+      -- Misc
+    , period -- a token representing a period
     ) where
 
 import PFEG.Types
 
-import Control.Monad (liftM2)
 import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Text.Encoding
 
 import Data.List (findIndices)
 
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
 
-import Codec.Digest.SHA.Monad
+period :: Token Text
+period = Word { surface = ".", lemma = ".", pos = "$." }
 
 data Context a = Context { left  :: ![a]
                          , right :: ![a]
                          } deriving (Functor,Show,Foldable,Traversable)
 
-data Item a = Item { itemLemma   :: !(Context a)
-                   , itemSurface :: !(Context a)
-                   , target      :: !(Token a)
-                   } deriving (Functor,Show,Foldable,Traversable)
+type Item a = (Token a,Context (Token a))
+type ItemGetter = Document Text -> [Item Text]
 
-getMaskedItems :: ItemGetter
-getMaskedItems s = map (getItem s) $ findIndices isMasked s
+getContexts :: (a -> Bool) -> [a] -> [(a,Context a)]
+getContexts p s = map (mkContext . flip splitAt s) $ findIndices p s
+                  where mkContext (_,[]) = error "findIndices returned some garbage!"
+                        mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
-getMaskedItems' :: [Text] -> ItemGetter
-getMaskedItems' ts s = map (getItem s) $ findIndices (liftM2 (&&) isMasked (isTarget ts)) s
+getSentenceItems :: (Text -> Bool) -> ItemGetter
+getSentenceItems p = concatMap (getContexts (p.surface) . (period:) . filter (not.punctuation))
+    where punctuation t = surface t `elem` [","]
 
-type ItemGetter = Sentence Text -> [Item Text]
+type Restriction = (Int,Int)
 
-isMasked :: Token a -> Bool
-isMasked Masked {} = True
-isMasked _         = False
-
-isTarget :: (Eq a) => [a] -> Token a -> Bool
-isTarget ts t | surface t `elem` ts = True
-              | otherwise           = False
-
-getItems :: [Text] -> ItemGetter
-getItems t s = let target_indices = findIndices ((`elem` t).surface) s
-               in  map (getItem s) target_indices
-
-getItem :: Sentence Text -> Int -> Item Text
-getItem s i = let (l,t:r) = splitAt i s
-                  cc = Context l r
-              in Item { itemLemma = fmap lemma cc
-                      , itemSurface = fmap surface cc
-                      , target = t }
-
--- | Hash only the surface of an item, with an 'X' in between to keep apart [a,b] [] and [a] [b].
-instance Hashable (Item Text) where
-    update Item { itemSurface = (Context l r) } = update $ encodeUtf8
-        (T.concat $ l ++ [T.singleton 'X'] ++ r)
+restrictContext :: Restriction -> Context a -> Context a
+restrictContext (i_l,i_r) Context { left = l, right = r } =
+    Context { left = reverse . take i_l . reverse $ l, right = take i_r r }
