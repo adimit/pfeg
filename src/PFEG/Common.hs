@@ -76,7 +76,7 @@ doTimed f = do
     return (result, end `diffUTCTime` start)
 
 doTimed_ :: MonadIO m => m () -> m NominalDiffTime
-doTimed_ f = doTimed f >>= return.snd
+doTimed_ f = liftM snd $ doTimed f
 
 renderS :: NominalDiffTime -> String
 renderS = renderSecs.round

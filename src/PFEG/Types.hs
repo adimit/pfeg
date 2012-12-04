@@ -19,11 +19,7 @@ nonWord x = Word x x x
 
 -- | Represents either a normal word token, or a masked one.
 data Token a = Word   { pos :: !a, lemma :: !a, surface :: !a }
-             | Masked { pos :: !a
-                      , lemma :: !a
-                      , surface :: !a
-                      , original :: !a
-                      , alternatives :: ![a] } deriving (Show,Functor,Traversable,Foldable,Eq)
+               deriving (Show,Functor,Traversable,Foldable,Eq)
 
 -- | Represents a WAC document.
 type Document a = [Sentence a]
