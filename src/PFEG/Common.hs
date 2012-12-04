@@ -103,9 +103,9 @@ sentenceP res = do
 
 wordP :: Regexes -> Parser (Maybe (Token Text))
 wordP res = do
-    s <- liftM normalize $ A.takeWhile (/= '\t') <* A.char '\t'
+    s <- A.takeWhile (/= '\t') <* A.char '\t'
     p <- A.takeWhile (/= '\t') <* A.char '\t'
-    l <- liftM normalize $ A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
+    l <- A.takeWhile (not . A.isEndOfLine) <* A.endOfLine
     return $! makeWord res Word { pos = p, surface = s, lemma = l }
 
 makeWord :: Regexes -> Token Text -> Maybe (Token Text)
@@ -114,11 +114,11 @@ makeWord Regexes { cardTag = ct, numeralRegex = nre, timeRegex = tre, dateRegex 
            | X.null s = Nothing
            | p == ct && s `matches` tre = Just $ w { surface = "TIME", lemma = "TIME" }
            | p == ct && s `matches` dre = Just $ w { surface = "DATE", lemma = "DATE" }
-           | p == ct && s `matches` nre = Just w
+           | p == ct && normalize s `matches` nre = Just w
            | p == ct && s `inRange` (1,12) = Just w
            | p == ct = Just w { surface = "CARD", lemma = "CARD" }
            | X.any (=='.') . X.init $ s = Nothing
-makeWord _ w = Just w
+makeWord _ w@(Word { surface = s, lemma = l })  = Just w { surface = normalize s, lemma = normalize l }
 
 inRange :: Text -> (Int,Int) -> Bool
 inRange t (l,u) = case decimal t of Right (a, t') -> X.null t' && l <= a && a <= u
