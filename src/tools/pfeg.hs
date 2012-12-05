@@ -186,8 +186,8 @@ getCounts (Sphinx.Retry t)     = ([],t)
 -- big for the context.
 makeQueries :: Text -> Context (Token Text) -> Cohort () -> Maybe (Cohort Query)
 makeQueries index cxt (Cohort (p,ch))
-    | (length . left $ cxt) <= (Pat.size . Pat.left $ p) &&
-      (length . right $ cxt) <= (Pat.size . Pat.right $ p) = Just . Cohort . (p,) $
+    | (length . left $ cxt) >= (Pat.size . Pat.left $ p) &&
+      (length . right $ cxt) >= (Pat.size . Pat.right $ p) = Just . Cohort . (p,) $
         map (\(t,_) -> (t,Query { queryIndexes = index
                                   , queryComment = T.empty
                                   , queryString = Pat.makeQuery cxt p t})) ch
