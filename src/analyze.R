@@ -9,40 +9,68 @@ filename <- name("pfeg-stats.csv")
 pfeg <- read.csv(filename, header=F, sep="\t")
 colnames(pfeg) <- c("itemID", "leftC", "target", "rightC", "pattern", "isCorrect", "candidate", "hits", "queryTime")
 
-pfeg.totalhits <- pfeg[,c("itemID", "pattern","hits","isCorrect")]
-pfeg.totalhits$anyhits <- 0
-pfeg.totalhits[ pfeg.totalhits$hits > 0, ]$anyhits <- 1
+Coverage <- function(df) {
+	df$anyhits <- 0
+	df[ df$hits > 0, ]$anyhits <- 1
+	cov <- dcast(df, pattern ~ ., function(x) { sum(x)/length(x) }, value.var = "anyhits")
+	colnames(cov) <- c("pattern","coverage")
+	return(cov[with(cov, order(pattern)),])
+}
 
-pfeg.recall <- dcast(pfeg.totalhits[,c("pattern","anyhits")], pattern ~ . ,
-                     function(x) { sum(x)/length(x) }, value.var ="anyhits")
-colnames(pfeg.recall) <- c("pattern","recall")
+Accuracy <- function(df) {
+	acc <- ddply(dcast(df[df$hits > 0,], pattern ~ isCorrect, length, value.var = "isCorrect"), .(Correct/(Correct + Incorrect)))
+	colnames(acc) <- c("accuracy", "pattern", "Correct", "Incorrect")
+	return(acc[with(acc, order(pattern)),])
+}
 
-pfeg.anyhits <- pfeg.totalhits[pfeg.totalhits$hits > 0,]
-pfeg.precision <- ddply(dcast(pfeg.anyhits, pattern ~ isCorrect, length, value.var = "isCorrect"), .(Correct/(Correct + Incorrect)))
-colnames(pfeg.precision) <- c("precision", "pattern", "Correct" , "Incorrect")
+# Compute accuracy and coverage per pattern
+pfeg.stats <- Accuracy(pfeg)
+pfeg.stats$coverage <- Coverage(pfeg)$coverage
 
-pfeg.precision <- pfeg.precision[with(pfeg.precision, order(pattern)),]
-pfeg.recall <- pfeg.recall[with(pfeg.recall, order(pattern)),]
+# Compute precision for candidate predictions
+targets <- dcast(dcast(pfeg, itemID + target ~ .)[,c(1,2)], target ~ .)
+colnames(targets) <- c("target","count")
+baseline = max(targets$count) / sum(targets$count)
 
-pfeg.F <- pfeg.precision
-pfeg.F$recall <- pfeg.recall$recall
+# Accuracy/Coverage graph
+acccov <- ggplot(pfeg.stats,aes(accuracy,coverage,label=pattern)) + geom_text(hjust=0,vjust=0,size=8) + geom_point() +
+	labs(x="Accuracy", y="Coverage") + expand_limits(x=c(0.2,1),y=c(0.2,1)) +
+	geom_smooth(method="lm") +
+	annotate("segment", x=baseline,xend=baseline,y=0.1,yend=1,colour="red") +
+	annotate("text", x=baseline+0.06,y=0.4,label="baseline", colour="red",size=10)
 
-fmeasure <- function(beta, precision, recall) { (1+beta^2) * (precision * recall / (beta^2 * precision + recall)) }
-beta = 0.1
-pfeg.F <- ddply(pfeg.F, .(fmeasure(beta,precision,recall)))
-colnames(pfeg.F) <- c("F_", "precision", "pattern", "Correct", "Incorrect","recall")
+theme1 <- theme_bw() + theme(axis.text = element_text(size=14),text = element_text(size=26),legend.position="bottom")
 
-id <- function (x) x
-
-png(name("f-values.png"),height=1000,width=1000)
-print(ggplot(pfeg.F,aes(reorder(pattern,F_,id),F_)) + geom_point(stat="identity"))
+png(name("acc-cov.png"), height=1000,width=1000)
+print(acccov + theme1)
 dev.off()
 
-png(name("prec-rec.png"), height=1000,width=1000)
-print(ggplot(pfeg.F,aes(precision,recall,label=pattern)) + geom_text(hjust=0,vjust=0) + geom_point())
-dev.off()
-
-writeLines("Precision and recall for patterns:\n============================")
-print(pfeg.F)
-writeLines("Precision for prediction candidates:\n============================")
+writeLines("Accuracy and coverage for patterns:\n============================")
+print(pfeg.stats)
+writeLines("Accuracy for prediction candidates:\n============================")
 print(ddply(dcast(pfeg[pfeg$hits > 0,], candidate ~ isCorrect,value.var="hits"), .(Correct/(Correct + Incorrect))))
+
+makeConvergence <- function(stepsize=100) {
+	meanCoverage <- function(maxID) { mean(Coverage(pfeg[pfeg$itemID < maxID,])$coverage) }
+	meanAccuracy <- function(maxID) { mean(Accuracy(pfeg[pfeg$itemID < maxID,])$accuracy) }
+
+        items <- seq(stepsize,max(pfeg$itemID),stepsize)
+
+        # dynamic programming my ass. Brute force all the way. Incidentally, this computation is slow.
+	convg <- data.frame(mCov=mapply(meanCoverage,items),
+                            mAcc=mapply(meanAccuracy,items),
+                            trainingItems=items)
+
+        return(convg)
+}
+
+printConvergenceGraphs <- function(stepsize=100) {
+        writeLines("Generating convergence graphs...")
+        convg <- melt(makeConvergence(stepsize),id.vars="trainingItems")
+        cg <- ggplot(convg,aes(x=trainingItems,y=value,group=variable,colour=variable,shape=variable)) +
+                geom_point() + labs(x="Number of items", y="Mean value") +
+                scale_colour_discrete(name="Statistic: ",labels=c("Coverage","Accuracy"))
+        png(name("convergence.png"), height=600,width=600)
+        print(cg + theme1)
+        dev.off()
+}
