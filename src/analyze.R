@@ -56,6 +56,7 @@ makeConvergence <- function(stepsize=100) {
 
         items <- seq(stepsize,max(pfeg$itemID),stepsize)
 
+        writeLines("Generating convergence statistic...")
         # dynamic programming my ass. Brute force all the way. Incidentally, this computation is slow.
 	convg <- data.frame(mCov=mapply(meanCoverage,items),
                             mAcc=mapply(meanAccuracy,items),
@@ -64,13 +65,14 @@ makeConvergence <- function(stepsize=100) {
         return(convg)
 }
 
-printConvergenceGraphs <- function(stepsize=100) {
-        writeLines("Generating convergence graphs...")
-        convg <- melt(makeConvergence(stepsize),id.vars="trainingItems")
-        cg <- ggplot(convg,aes(x=trainingItems,y=value,group=variable,colour=variable,shape=variable)) +
-                geom_point() + labs(x="Number of items", y="Mean value") +
-                scale_colour_discrete(name="Statistic: ",labels=c("Coverage","Accuracy"))
-        png(name("convergence.png"), height=600,width=600)
+printConvergenceGraphs <- function(convg,stepsize=100) {
+        convg <- melt(convg,id.vars="trainingItems")
+        cg <- ggplot(convg,aes(x=trainingItems,y=value,group=variable)) +
+                geom_point(aes(colour=variable,shape=variable)) +
+                labs(x="Number of items", y="Mean value") +
+                scale_colour_discrete(name="Statistic: ",labels=c("Coverage","Accuracy")) +
+                scale_shape(name="Statistic: ",labels=c("Coverage","Accuracy"))
+        png(name("convergence.png"), height=700,width=700)
         print(cg + theme1)
         dev.off()
 }
