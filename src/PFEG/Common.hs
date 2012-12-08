@@ -154,13 +154,14 @@ logger total logVar = do
     forever $ do
         cur <- readChan logVar
         tcur <- getCurrentTime
-        let ρ  = fromIntegral cur / fromIntegral (total+1)
-            δt = tcur `diffUTCTime` t0
-            η  = (recip ρ - 1) * δt -- η ⇔ eta ⇔ ETA, get it? GET IT?
-        putStr $ "\rRunning for " ++ renderS δt
-                  ++ "; did " ++ show cur ++ "/" ++ show total
-                  ++ " (" ++ show (round (100*ρ) :: Integer)
-                  ++ "%) ETA: " ++ renderS η ++ "   "
+        let δt = tcur `diffUTCTime` t0
+        if cur == 0 then putStr $ "\rRunning for " ++ renderS δt ++ ". ETA unknown.            "
+                    else do let ρ  = fromIntegral cur / fromIntegral (total+1)
+                                η  = (recip ρ - 1) * δt -- η ⇔ eta ⇔ ETA, get it? GET IT?
+                            putStr $ "\rRunning for " ++ renderS δt
+                                 ++ "; did " ++ show cur ++ "/" ++ show total
+                                 ++ " (" ++ show (round (100*ρ) :: Integer)
+                                 ++ "%) ETA: " ++ renderS η ++ "   "
         hFlush stdout
 
 -- | A strict update to monad state via @f@.
