@@ -76,3 +76,5 @@ printConvergenceGraphs <- function(convg,stepsize=100) {
         print(cg + theme1)
         dev.off()
 }
+
+printConvergenceGraphs(makeConvergence())
