@@ -8,6 +8,7 @@ module PFEG.Configuration
     , configurePFEG
     , deinitialize ) where
 
+import System.Directory
 import Text.Search.Sphinx.Types (MatchMode(..))
 import qualified Text.Search.Sphinx as S
 import Control.Concurrent.Chan
@@ -39,6 +40,7 @@ data ConfigError = IOError FilePath
                  | SectionNotPresent SectionName
                  | ParseError String
                  | GenericError String
+                 | FileNotFoundError FilePath
                    deriving (Eq, Ord, Show)
 
 instance Error ConfigError where
@@ -62,10 +64,9 @@ data PFEGConfig = PFEGConfig
     , chunkSize        :: Int -- ^ Chunk size for the Iteratee
     , matchPatterns    :: [Pat.MatchPattern] }
 
-data ModeConfig = Record { corpora     :: [Corpus] }
-                | Learn  { corpora     :: [Corpus]
-                         , statLog   :: Handle }
-                | Predict { corpora    :: [Corpus] }
+data ModeConfig = Record  { corpora :: [Corpus] }
+                | Predict { corpus  :: Corpus }
+                | Learn   { corpus  :: Corpus, statLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
@@ -126,16 +127,15 @@ initialize modeString cfg = do
     pats <- getPatterns cfg "patterns" "patterns"
     runas <- case mode of
       RunLearn -> do
-            test  <- getCorpusSet cfg "tasks" "learn"
+            corp <- getValue cfg "tasks" "learn" >>= getCorpus cfg
             resL  <- openHandle AppendMode cfg "main" "statLog"
-            return Learn { corpora    = test
-                         , statLog  = resL }
+            return Learn { corpus = corp, statLog = resL }
       RunRecord -> do
             train <- getCorpusSet cfg "tasks" "record"
             return Record { corpora = train }
       RunPredict -> do
-            predict <- getCorpusSet cfg "tasks" "predict"
-            return Predict { corpora    = predict }
+            corp <- getValue cfg "tasks" "learn" >>= getCorpus cfg
+            return Predict { corpus = corp }
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
@@ -171,10 +171,9 @@ printConfig c =
                           in h:makeBits n t
 
 showMode :: ModeConfig -> String
-showMode c = mode ++ "Corpora:\n" ++ unlines (map (('\t':).snd) (corpora c))
-    where mode = case c of Record  {} -> "PFEG is in RECORD mode\n"
-                           Learn   {} -> "PFEG is in LEARN mode\n"
-                           Predict {} -> "PFEG is in PREDICT mode\n"
+showMode Record  { corpora = cs } = "PFEG is in RECORD mode\n"  ++ unlines (map (('\t':).snd) cs) ++ "\n"
+showMode Learn   { corpus = c }   = "PFEG is in LEARN mode\n"   ++ '\t':snd c                     ++ "\n"
+showMode Predict { corpus = c }   = "PFEG is in PREDICT mode\n" ++ '\t':snd c                     ++ "\n"
 
 defaultSearchConf :: String -> Int -> S.Configuration
 defaultSearchConf shost sport = S.defaultConfig
@@ -203,9 +202,16 @@ getPatterns cfg sec name = do
 getCorpusSet :: Config -> SectionName -> OptionName -> Configurator [Corpus]
 getCorpusSet cfg sec opt = do
     names <- liftM (map T.unpack . splitAndStrip) (getValue cfg sec opt)
-    corps <- mapM (getValue cfg "data") names
-    -- TODO: maybe we should check whether the corpora exist first.
-    return $ zip names corps
+    mapM (getCorpus cfg) names
+
+getCorpus :: Config -> String -> Configurator Corpus
+getCorpus cfg name = do
+    corps <- getValue cfg "data" name
+    isfr <- liftIO $ isFileReadable corps
+    if isfr then return (name,corps) else throwError $ FileNotFoundError corps
+
+isFileReadable :: FilePath -> IO Bool
+isFileReadable f = liftM2 (&&) (doesFileExist f) (liftM readable $ getPermissions f)
 
 readChunkSize :: Config -> Configurator Int
 readChunkSize cfg = do
