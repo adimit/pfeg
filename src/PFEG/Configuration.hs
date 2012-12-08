@@ -58,6 +58,7 @@ data PFEGConfig = PFEGConfig
     , targets          :: [Text] -- ^ Targets for this run
     , majorityBaseline :: Text
     , sphinxIndex      :: Text
+    , sample           :: (Int,Int)
     , searchConf       :: S.Configuration
     , cardRegexes      :: Regexes
     , debugLog         :: Handle -- ^ Write debug information to this log
@@ -125,6 +126,10 @@ initialize modeString cfg = do
     encoding <- getValue cfg "data" "encoding"
     conv <- liftC $ open encoding Nothing
     pats <- getPatterns cfg "patterns" "patterns"
+    sampleFrom <- liftM read $ getValue cfg "data" "sampleFrom"
+    sampleSize <- liftM read $ getValue cfg "data" "sampleSize"
+    when (sampleFrom < sampleSize) $ throwError . GenericError $
+        ("Can't sample " ++ show sampleSize ++ " items from only " ++ show sampleFrom ++ ".")
     runas <- case mode of
       RunLearn -> do
             corp <- getValue cfg "tasks" "learn" >>= getCorpus cfg
@@ -139,6 +144,7 @@ initialize modeString cfg = do
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC
+                            , sample           = (sampleFrom,sampleSize)
                             , searchConf = defaultSearchConf shost sport 
                             , cardRegexes      = Regexes { numeralRegex = numrRE
                                                          , dateRegex = dateRE
