@@ -7,7 +7,7 @@ module PFEG.Context
     , Restriction
       -- * Transformation functions
     , restrictContext
-    , getSentenceItems
+    , getDocumentItems
       -- Misc
     , period -- a token representing a period
     ) where
@@ -36,8 +36,8 @@ getContexts p s = map (mkContext . flip splitAt s) $ findIndices p s
                   where mkContext (_,[]) = error "findIndices returned some garbage!"
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
-getSentenceItems :: (Text -> Bool) -> ItemGetter
-getSentenceItems p = concatMap (getContexts (p.surface) . (period:) . filter (not.punctuation))
+getDocumentItems :: (Text -> Bool) -> ItemGetter
+getDocumentItems p = concatMap (getContexts (p.surface) . (period:) . filter (not.punctuation))
     where punctuation t = surface t `elem` [","]
 
 type Restriction = (Int,Int)
