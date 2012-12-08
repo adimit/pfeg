@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, TupleSections, FlexibleInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-} -- holy language extensions batman.
+{-# LANGUAGE BangPatterns, DeriveFunctor, TupleSections, FlexibleInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-} -- holy language extensions batman.
 module Main where
 
 import Control.Concurrent (ThreadId,killThread,forkIO)
@@ -6,7 +6,7 @@ import Control.Concurrent.Chan
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
 
-import Control.Exception (bracket)
+import Control.Exception (bracket,throw)
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import qualified Control.Monad.Trans.Either as E
@@ -27,8 +27,11 @@ import Graphics.Vty.Terminal
 import System.IO
 import Text.Groom
 import qualified ReadArgs as RA
+import qualified Data.List as L
 import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
+import qualified Data.Random as R
+import qualified Data.Random.Extras as RE
 
 import PFEG
 import PFEG.Common
@@ -107,21 +110,25 @@ process session = do
     _debLthread_id <- forkIO . forever $ pfegLogger (debugLog session) (getStatsLog session) logChan
     let log = atomically . writeTChan logChan
         res = cardRegexes session
+        (_,sampleSize) = sample session
+        qg = generateCohortQueries (sphinxIndex session) $ makeCohorts (targets session) (matchPatterns session)
     case pfegMode session of
         Record{ corpora = cs } -> do
           s <- prepare (database session) insertText
           let it = documentIteratee (recordDocsF tchan s)
           workOnCorpora "record" tchan (documentI res)it session () cs
-        Learn{ corpora = cs } -> do
+        Learn{ corpus = cs } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (learnF qg chan)
-              qg = generateCohortQueries (sphinxIndex session) $ makeCohorts (targets session) (matchPatterns session)
-          workOnCorpora "match" tchan (documentI res) it session 0 cs
-        Predict { corpora = cs } -> do
-          let it = itemIteratee (getSentenceItems (`elem` targets session)) (predictF qg log)
-              qg = generateCohortQueries (sphinxIndex session) $ makeCohorts (targets session) (matchPatterns session)
-          workOnCorpora "predict" tchan (documentI res) it session initialScore cs
+          randomSample <- extractRandomSample () (documentI res) session cs
+          (threadID,logVar) <- evalPFEG (statusUpdater' "to process sample" sampleSize) () session
+          void $ evalPFEG (mapM (learnF logVar qg chan) randomSample) 0 session
+          killThread threadID
+        Predict { corpus = cs } -> do
+          randomSample <- extractRandomSample () (documentI res) session cs
+          (threadID,logVar) <- evalPFEG (statusUpdater' "to process sample" sampleSize) () session
+          void $ evalPFEG (mapM (predictF logVar qg log) randomSample) initialScore session
+          killThread threadID
     putStrLn "Waiting for DB…"
     atomically $ writeTBChan tchan Shutdown
     atomically $ do
@@ -133,7 +140,7 @@ process session = do
 -- | debugging function for the REPL
 generateItems :: Regexes -> Converter -> FilePath -> IO [Item Text]
 generateItems res conv fp = do
-    let ig = getSentenceItems (`elem` T.words "auf in am")
+    let ig = getDocumentItems (`elem` T.words "auf in am")
     liftM concat $
         I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream (documentI res)) (I.joinI $ I.mapChunks ig I.getChunks))
 
@@ -215,8 +222,8 @@ isBaseline _ = False
 -- a non-baseline prediction, it assumes baseline, matches against the
 -- item's target, and updates the score accordingly, but modifying the
 -- baseline counts instead of the pattern counts.
-predictF :: QueryGenerator -> Logger -> ItemProcessor Score
-predictF qg log (target,context) = do
+predictF :: Chan Int -> QueryGenerator -> Logger -> ItemProcessor Score
+predictF statusChan qg log (target,context) = do
     modify' (\s -> s { totalItems = totalItems s + 1 } )
     let cohorts = qg context
     p <- liftM void . E.runEitherT . mapM (\c -> lift (attack c) >>= \r -> if isBaseline r then E.right () else E.left r) $ cohorts
@@ -236,6 +243,7 @@ predictF qg log (target,context) = do
             , show $ M.foldl' (+) 1 (falsePositives s) ]
         log . Status . T.pack . show . M.toList $ truePositives s
         log . Status . T.pack . show . M.toList $ falsePositives s
+        writeChan statusChan $ totalItems s
 
 -- @Either Prediction ()@ means: either @Left@ contains an actual
 -- prediction (no "Baseline"), or @Right@ contains nothing, which means we
@@ -282,13 +290,14 @@ type ItemNumber = Integer
 -- results to an R-friendly CSV format. The logging is actually done by
 -- "learnLogger" and sent to it via a "QueryChan" that cointains
 -- "QueryData".
-learnF :: QueryGenerator -> QueryChan -> ItemProcessor ItemNumber
-learnF qg resLog i = do
+learnF :: Chan Int -> QueryGenerator -> QueryChan -> ItemProcessor ItemNumber
+learnF statusChan qg resLog i = do
     modify' (+1)
     itemNumber <- get
     let cohorts = qg $ snd i
     (preds,time) <- doTimed $ mapM attack cohorts
-    liftIO $ writeChan resLog $ QueryData itemNumber i preds time
+    liftIO $ do writeChan resLog $ QueryData itemNumber i preds time
+                writeChan statusChan $ fromIntegral itemNumber
 
 type QueryChan = Chan QueryData
 
@@ -316,14 +325,14 @@ learnLogger log c = do
             predictionCounts Baseline { } = T.pack $ show (0 :: Int)
             predictionCounts Winner { hits = h } = T.pack $ show h
             line p = [ T.pack $ show itemNumber
-                        , T.unwords . left $ ctxt
-                        , surface target
-                        , T.unwords . right $ ctxt
-                        , T.pack . Pat.showShort . pattern $ p
-                        , isCorrect p
-                        , prediction p
-                        , predictionCounts p
-                        , T.pack . show . (round :: NominalDiffTime -> Integer) $ time ]
+                     , T.unwords . left $ ctxt
+                     , surface target
+                     , T.unwords . right $ ctxt
+                     , T.pack . Pat.showShort . pattern $ p
+                     , isCorrect p
+                     , prediction p
+                     , predictionCounts p
+                     , T.pack . show . (round :: NominalDiffTime -> Integer) $ time ]
         mapM_ (liftIO . log . Stats . line) preds
 
 -- This is the debug logger.
@@ -401,6 +410,25 @@ workOnCorpora action tchan it1 it2 session st = mapM_ $ \ c@(cName,cFile) -> do
     atomically $ do writeTBChan tchan (Log (T.unwords [action,"end"]) c)
                     writeTBChan tchan Commit
 
+-- Same as workOnCorpora but samples its corpus instead. It then returns
+-- a randomized list of items, that can then be further processed.
+extractRandomSample :: st -> I.Iteratee Text (PFEG st) (Document Text) -> PFEGConfig -> Corpus -> IO [Item Text]
+extractRandomSample st it1 session (cName,cFile) = do
+    let (sampleFrom,sampleSize) = sample session
+    (threadID,logVar) <- evalPFEG (statusUpdater' "sampling process" sampleSize) () session
+    putStrLn $ "Sampling " ++ show sampleSize ++ " items from " ++ show sampleFrom
+                ++ " items in '" ++ cName ++ "' at '" ++ cFile ++ ".'"
+    spl <- R.runRVar (RE.sample sampleSize [1..sampleFrom]) R.StdRandom
+    putStrLn "Acquiring sample."
+    let sampleit = I.mapChunks (toUnicode (corpusConverter session)) -- convert BS to unicode Text
+                   I.><> I.convStream it1 -- parse the Text into Document Text
+                   I.><> I.mapChunks (getDocumentItems (`elem` targets session)) -- Turn Documents into [Item Text]
+                   I.=$ selectSampleI logVar spl -- select a sample of all [Item Text]s
+    items <- evalPFEG (I.run =<< enumFile (chunkSize session) cFile sampleit) st session
+    killThread threadID
+    putStrLn "Randomizing sample."
+    R.runRVar (R.shuffle items) R.StdRandom
+
 -- | The data that will be written to the dbthread.
 type RecordData = [[SqlValue]]
 
@@ -441,13 +469,32 @@ type SentenceProcessor_   = SentenceProcessor ()
 type ItemProcessor st = Item Text -> PFEG st ()
 type ItemProcessor_ = ItemProcessor ()
 
+selectSampleI :: Chan Int -> [Int] -> I.Iteratee [a] (PFEG st) [a]
+selectSampleI logVar sampleIndexes = I.liftI $ go (kcps id 0 1 (L.sort sampleIndexes))
+    where go k (Chunk a) = k a
+          go _ _         = throw EofException
+          kcps z !c !i js@(j:js') (s:ss) | j == i = let c' = c+1
+                                                    in liftIO (writeChan logVar c) 
+                                                    >> kcps (z.(s:)) c' (i+1) js' ss
+                                         | otherwise = kcps  z       c  (i+1) js  ss
+          kcps z _c _i [] _s = I.idone (z []) (EOF Nothing) -- we've exhausted the sample list. done
+          kcps z !c !i js [] = I.liftI $ go (kcps z c i js) -- we've exhausted the item stream. continue
+          -- where z is the accumulating list continuation, c is a counter
+          -- of how many items we've collected (for logging), i is the
+          -- current item's index, js are the item numbers we're looking
+          -- for in the sample, and s is the stream of items. CPS!
+
 -- This displays progress indicators.
 statusUpdater :: Corpus -> PFEG () (ThreadId,Chan Int)
 statusUpdater (cName,cFile) = do
     session <- ask
-    liftIO $ do
-        logVar <- newChan
-        csize  <- withFile cFile ReadMode hFileSize
-        putStrLn $ "Processing '" ++ cName ++ "' at '" ++ cFile ++ ".'"
-        threadID <- forkIO $ logger (fromIntegral csize `div` chunkSize session) logVar
-        return (threadID,logVar)
+    csize <- liftIO $ withFile cFile ReadMode hFileSize
+    statusUpdater' ("to process '" ++ cName ++ "' at '" ++ cFile ++ ".'")
+                   (fromIntegral csize `div` chunkSize session)
+
+statusUpdater' :: String -> Int -> PFEG () (ThreadId, Chan Int)
+statusUpdater' task maxI = liftIO $ do
+    logVar <- newChan
+    putStrLn $ "Starting " ++ task ++ "."
+    threadID <- forkIO $ logger maxI logVar
+    return (threadID,logVar)
