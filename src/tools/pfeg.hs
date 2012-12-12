@@ -179,7 +179,7 @@ attack :: Cohort Query -> PFEG st Prediction
 attack (Cohort (p,qs)) = do
     session <- ask
     (counts,warning) <- liftIO $ liftM getCounts $ runQueries (searchConf session) (map snd qs)
-    -- TODO log the warning
+    unless (T.null warning) . liftIO . putStrLn $ ("WARNING: " ++ T.unpack warning)
     return $ winner $ Cohort (p,zipWith (\ (t,_) r -> (t,r)) qs counts)
 
 -- From a query result, extract the hit counts, if possible.
