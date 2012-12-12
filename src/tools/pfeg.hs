@@ -477,6 +477,8 @@ type SentenceProcessor_   = SentenceProcessor ()
 type ItemProcessor st = Item Text -> PFEG st ()
 type ItemProcessor_ = ItemProcessor ()
 
+-- Given a list of indices, select only those indices from an incoming
+-- chunked list. Progress is logged to the provided "Chan".
 selectSampleI :: Chan Int -> [Int] -> I.Iteratee [a] (PFEG st) [a]
 selectSampleI logVar sampleIndexes = I.liftI $ go (kcps id 0 1 (L.sort sampleIndexes))
     where go k (Chunk a) = k a
@@ -492,7 +494,7 @@ selectSampleI logVar sampleIndexes = I.liftI $ go (kcps id 0 1 (L.sort sampleInd
           -- current item's index, js are the item numbers we're looking
           -- for in the sample, and s is the stream of items. CPS!
 
--- This displays progress indicators.
+-- This displays progress indicators for corpora.
 statusUpdater :: Corpus -> PFEG () (ThreadId,Chan Int)
 statusUpdater (cName,cFile) = do
     session <- ask
@@ -500,6 +502,7 @@ statusUpdater (cName,cFile) = do
     statusUpdater' ("to process '" ++ cName ++ "' at '" ++ cFile ++ ".'")
                    (fromIntegral csize `div` chunkSize session)
 
+-- This is a generic progress indicator for anything numeric.
 statusUpdater' :: String -> Int -> PFEG () (ThreadId, Chan Int)
 statusUpdater' task maxI = liftIO $ do
     logVar <- newChan
