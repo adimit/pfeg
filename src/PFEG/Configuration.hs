@@ -66,7 +66,7 @@ data PFEGConfig = PFEGConfig
     , matchPatterns    :: [Pat.MatchPattern] }
 
 data ModeConfig = Record  { corpora :: [Corpus] }
-                | Predict { corpus  :: Corpus }
+                | Predict { corpus  :: Corpus, predictLog :: Handle }
                 | Learn   { corpus  :: Corpus, statLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
@@ -88,6 +88,7 @@ deinitialize pfeg = do
     disconnect $ database pfeg
     hClose $ debugLog pfeg
     case pfegMode pfeg of m@Learn{} -> hClose $ statLog m
+                          m@Predict{} -> hClose $ predictLog m
                           _ -> return ()
 
 -- | Read configuration file and initialize all necessary data structures.
@@ -140,7 +141,8 @@ initialize modeString cfg = do
             return Record { corpora = train }
       RunPredict -> do
             corp <- getValue cfg "tasks" "learn" >>= getCorpus cfg
-            return Predict { corpus = corp }
+            resL  <- openHandle AppendMode cfg "main" "predictLog"
+            return Predict { corpus = corp, predictLog = resL }
     let config = PFEGConfig { pfegMode         = runas
                             , database         = db
                             , statusLine       = statC

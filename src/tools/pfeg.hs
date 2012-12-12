@@ -106,6 +106,7 @@ process session = do
     _dbthread_id <- forkIO $ dbthread (database session) tchan
     logChan <- atomically newTChan
     let getStatsLog PFEGConfig { pfegMode = Learn { statLog = rl } } = Just rl
+        getStatsLog PFEGConfig { pfegMode = Predict { predictLog = pl } } = Just pl
         getStatsLog _ = Nothing
     _debLthread_id <- forkIO . forever $ pfegLogger (debugLog session) (getStatsLog session) logChan
     let log = atomically . writeTChan logChan
@@ -224,6 +225,7 @@ isBaseline _ = False
 -- baseline counts instead of the pattern counts.
 predictF :: Chan Int -> QueryGenerator -> Logger -> ItemProcessor Score
 predictF statusChan qg log (target,context) = do
+    session <- ask
     modify' (\s -> s { totalItems = totalItems s + 1 } )
     let cohorts = qg context
     p <- liftM void . E.runEitherT . mapM (\c -> lift (attack c) >>= \r -> if isBaseline r then E.right () else E.left r) $ cohorts
@@ -234,7 +236,7 @@ predictF statusChan qg log (target,context) = do
             [ show $ totalItems s
             , if success then "Correct" else "Incorrect"
             , T.unpack $ surface target -- lol.
-            , T.unpack prediction
+            , T.unpack . predictedWord $ prediction
             , show $ correctItems s
             , show $ fromIntegral (correctItems s) / (fromIntegral (totalItems s) :: Double)
             , show $ baselineFallbacks s
@@ -243,6 +245,12 @@ predictF statusChan qg log (target,context) = do
             , show $ M.foldl' (+) 1 (falsePositives s) ]
         log . Status . T.pack . show . M.toList $ truePositives s
         log . Status . T.pack . show . M.toList $ falsePositives s
+        log . Stats $ [ T.pack . show . totalItems $ s
+                      , if isBaseline prediction then majorityBaseline session else predictedWord prediction
+                      , surface target
+                      , if isBaseline prediction then "Baseline" else T.pack . show . pattern $ prediction
+                      , if isBaseline prediction then T.singleton '0' else T.pack . show . hits $ prediction
+                      , if success then "Correct" else "Incorrect" ]
         writeChan statusChan $ totalItems s
 
 -- @Either Prediction ()@ means: either @Left@ contains an actual
@@ -250,21 +258,21 @@ predictF statusChan qg log (target,context) = do
 -- have to predict baseline. This then updates the "Score" in "PFEG"
 -- accordingly, and returns whether the prediction was successful, and also
 -- the prediction as Text.
-score :: Either Prediction () -> Text -> PFEG Score (Bool,Text)
+score :: Either Prediction () -> Text -> PFEG Score (Bool,Prediction)
 score (Right _) target = do
     mb <- liftM majorityBaseline ask
     if target == mb
        then modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1
                         , baselineCorrect   = baselineCorrect s + 1
-                        , correctItems      = correctItems s + 1 }) >> return (True,mb)
-       else modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1 }) >> return (False,mb)
+                        , correctItems      = correctItems s + 1 }) >> return (True,Baseline undefined)
+       else modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1 }) >> return (False,Baseline undefined)
 score (Left w) target =
     if target == predictedWord w
         then modify' (\s -> s { correctItems = correctItems s + 1
                               , truePositives = M.insertWith (+) (pattern w) 1 $ truePositives s }) 
-                    >> return (True,predictedWord w)
+                    >> return (True,w)
         else modify' (\s -> s { falsePositives = M.insertWith (+) (pattern w) 1 $ falsePositives s })
-                    >> return (False,predictedWord w)
+                    >> return (False,w)
 
 -- Initial "Score" object, with everything set to zero.
 initialScore :: Score
@@ -316,23 +324,23 @@ learnLogger log c = do
         (QueryData itemNumber (target,context) preds time) <- liftIO $ readChan c
         liftIO . log . Status $ T.unwords ["Querying Sphinx took",T.pack . renderS $ time]
         let ctxt = fmap surface context
-            isCorrect Baseline { } = corr $ majorityBaseline session == surface target
-            isCorrect Winner { predictedWord = w } = corr $ w == surface target
             corr False = "Incorrect"
             corr True = "Correct"
-            prediction Baseline { } = majorityBaseline session
-            prediction Winner { predictedWord = w } = w
-            predictionCounts Baseline { } = T.pack $ show (0 :: Int)
-            predictionCounts Winner { hits = h } = T.pack $ show h
             line p = [ T.pack $ show itemNumber
                      , T.unwords . left $ ctxt
                      , surface target
-                     , T.unwords . right $ ctxt
-                     , T.pack . Pat.showShort . pattern $ p
-                     , isCorrect p
-                     , prediction p
-                     , predictionCounts p
-                     , T.pack . show . (round :: NominalDiffTime -> Integer) $ time ]
+                     , T.unwords . right $ ctxt ] ++ patternStats p ++ 
+                     [ T.pack . show . (round :: NominalDiffTime -> Integer) $ time ]
+            patternStats Baseline { pattern = pat } = 
+                                    [ T.pack . Pat.showShort $ pat
+                                    , corr $ majorityBaseline session == surface target
+                                    , majorityBaseline session
+                                    , T.singleton '0' ]
+            patternStats Winner   { pattern = pat, predictedWord = w, hits = predictionCounts } =
+                                    [ T.pack . Pat.showShort $ pat
+                                    , corr $ w == surface target
+                                    , w
+                                    , T.pack . show $ predictionCounts ]
         mapM_ (liftIO . log . Stats . line) preds
 
 -- This is the debug logger.
