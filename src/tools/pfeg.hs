@@ -236,7 +236,7 @@ predictF statusChan qg log (target,context) = do
             [ show $ totalItems s
             , if success then "Correct" else "Incorrect"
             , T.unpack $ surface target -- lol.
-            , T.unpack . predictedWord $ prediction
+            , T.unpack $ if isBaseline prediction then majorityBaseline session else predictedWord prediction
             , show $ correctItems s
             , show $ fromIntegral (correctItems s) / (fromIntegral (totalItems s) :: Double)
             , show $ baselineFallbacks s
