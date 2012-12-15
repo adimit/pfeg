@@ -22,18 +22,12 @@ import qualified Data.Text as T
 import System.IO (hClose,openFile,IOMode(..),Handle)
 import Control.Monad.Error
 import Data.List.Split (splitOn)
-import qualified PFEG.Pattern as Pat
+import PFEG.Pattern
 import Data.Either
 import qualified Text.Parsec as Parsec
 import Data.Text.ICU.Convert
 import Data.Text.ICU
-
-data Regexes = Regexes
-     { numeralRegex :: Regex -- ^ when tagged CARD and matching this, tokens are left as is
-     , dateRegex    :: Regex -- ^ when tagged CARD and matching this, surface is DATE
-     , timeRegex    :: Regex -- ^ when tagged CARD and matching this, surface is TIME
-     , cardTag :: Text -- ^ The pos tag that represents cardinalities
-     }
+import PFEG.Types
 
 data ConfigError = IOError FilePath
                  | OptionNotSet SectionName OptionName
@@ -46,28 +40,6 @@ data ConfigError = IOError FilePath
 instance Error ConfigError where
     noMsg  = GenericError "Oh shit!"
     strMsg = GenericError
-
-type Name = String
-type Corpus = (Name,FilePath)
-
-data PFEGConfig = PFEGConfig
-    { pfegMode         :: ModeConfig -- ^ Program mode specific configuration
-    , statusLine       :: Chan Int -- ^ Status update channel
-    , database         :: Connection -- ^ The connection to the main database
-    , corpusConverter  :: Converter -- ^ Text.ICU input encoding converter
-    , targets          :: [Text] -- ^ Targets for this run
-    , majorityBaseline :: Text
-    , sphinxIndex      :: Text
-    , sample           :: (Int,Int)
-    , searchConf       :: S.Configuration
-    , cardRegexes      :: Regexes
-    , debugLog         :: Handle -- ^ Write debug information to this log
-    , chunkSize        :: Int -- ^ Chunk size for the Iteratee
-    , matchPatterns    :: [Pat.MatchPattern] }
-
-data ModeConfig = Record  { corpora :: [Corpus] }
-                | Predict { corpus  :: Corpus, predictLog :: Handle }
-                | Learn   { corpus  :: Corpus, statLog :: Handle }
 
 newtype Configurator a = C { runC :: ErrorT ConfigError IO a }
                            deriving (Monad, MonadError ConfigError, MonadIO)
@@ -197,13 +169,13 @@ openHandle mode cfg sec opt = do
     fname <- getValue cfg sec opt
     liftC $ openFile fname mode
 
-getPatterns :: Config -> SectionName -> OptionName -> Configurator [Pat.MatchPattern]
+getPatterns :: Config -> SectionName -> OptionName -> Configurator [MatchPattern]
 getPatterns cfg sec name = do
     pLocations <- liftM (map T.unpack . splitAndStrip) $ getValue cfg sec name
     liftM concat (forM pLocations getPattern)
     where getPattern n = do
               ps <- liftM splitAndStrip (getValue cfg sec n)
-              let (errs,pats) = partitionEithers $ map (Parsec.parse Pat.parsePattern sec) ps
+              let (errs,pats) = partitionEithers $ map (Parsec.parse parsePattern sec) ps
               forM_ errs $ \err -> liftC (putStrLn $ "***\nWARNING: " ++ show err++"\n***")
               return pats
 

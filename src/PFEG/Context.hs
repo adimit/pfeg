@@ -24,13 +24,6 @@ import Data.Foldable (Foldable)
 period :: Token Text
 period = Word { surface = ".", lemma = ".", pos = "$." }
 
-data Context a = Context { left  :: ![a]
-                         , right :: ![a]
-                         } deriving (Functor,Show,Foldable,Traversable)
-
-type Item a = (Token a,Context (Token a))
-type ItemGetter = Document Text -> [Item Text]
-
 getContexts :: (a -> Bool) -> [a] -> [(a,Context a)]
 getContexts p s = map (mkContext . flip splitAt s) $ findIndices p s
                   where mkContext (_,[]) = error "findIndices returned some garbage!"

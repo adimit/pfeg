@@ -9,7 +9,7 @@ module PFEG
     , noTarget
     ) where
 
-import PFEG.Configuration
+import PFEG.Types
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.CatchIO
