@@ -138,13 +138,6 @@ process session = do
         where dbthreadIsDone (Just ShutdownACK) = True
               dbthreadIsDone _ = False
 
--- | debugging function for the REPL
-generateItems :: Regexes -> Converter -> FilePath -> IO [Item Text]
-generateItems res conv fp = do
-    let ig = getDocumentItems (`elem` T.words "auf in am")
-    liftM concat $
-        I.run (I.joinIM $ enumFile 65536 fp $ I.joinI $ (I.mapChunks (toUnicode conv) I.><> I.convStream (documentI res)) (I.joinI $ I.mapChunks ig I.getChunks))
-
 -- Logging action to be passed to the actual worker threads so they can log
 -- stuff to the debug or stats log.
 type Logger = LogMessage -> IO ()
