@@ -5,18 +5,14 @@ module PFEG.Pattern
       MatchPattern(..)
     , Match(..)
     , Level(..)
-    , MatchData(..)
-    , Interference(..)
       -- ** Parsing and rendering functions for patterns
     , showShort
     , parsePattern
-    , matchParser
     , makeQuery
     , patternRestriction
     ) where
 
 import PFEG.Types
-import PFEG.ShortestMatch
 import Text.Parsec.Text
 import Data.Text (Text)
 import Text.Parsec.Char
@@ -27,12 +23,6 @@ import qualified PFEG.Context as C
 import Control.Monad (liftM)
 import qualified Data.Text as T
 import Data.Hashable
-
-data MatchData = MatchData
-    { predictedTarget  :: Token Text
-    , interferingWords :: Interference (Token Text)
-    , matchPattern     :: MatchPattern
-    } deriving Show
 
 data MatchPattern = MatchPattern { left  :: !Match
                                  , right :: !Match
@@ -104,20 +94,6 @@ retrieveWords' cxt p = fmap lvl (C.restrictContext (patternRestriction p) cxt)
     where lvl = case level p of 
                      Surface -> surface
                      Lemma -> lemma
-
-matchParser :: MatchPattern -> [Text] -> Context (Token Text) -> Sentence Text -> [MatchData]
-matchParser p targets cxt' s =
-    let eqR a b = selectLevel p a == selectLevel p b
-        cxt = (C.restrictContext (patternRestriction p) cxt')
-        prediction = findTarget eqR ((`elem` targets).surface) (C.left cxt, C.right cxt) s
-    in  maybe [] (pred2match p) prediction
-
-selectLevel :: MatchPattern -> Token Text -> Text
-selectLevel MatchPattern { level = Lemma } s = lemma s
-selectLevel MatchPattern { level = Surface } s = surface s
-
-pred2match :: MatchPattern -> Prediction (Token Text) -> [MatchData]
-pred2match p (Prediction possT f_inter) = map (\t -> MatchData t (f_inter t) p) possT
 
 renderLevel :: Level -> Text
 renderLevel Surface = "@surface"
