@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# LANGUAGE RankNTypes, OverloadedStrings, FlexibleInstances, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module PFEG.Context
     ( -- * Types
       Context(..)
@@ -13,13 +13,13 @@ module PFEG.Context
     ) where
 
 import PFEG.Types
-
 import Data.Text (Text)
-
 import Data.List (findIndices)
+import Control.Monad (liftM)
 
-import Data.Traversable (Traversable)
-import Data.Foldable (Foldable)
+import PFEG
+
+type ItemGetter = forall st. Document Text -> PFEG st [Item Text]
 
 period :: Token Text
 period = Word { surface = ".", lemma = ".", pos = "$." }
@@ -30,7 +30,7 @@ getContexts p s = map (mkContext . flip splitAt s) $ findIndices p s
                         mkContext (a,b) = (head b,Context { left = a, right = tail b })
 
 getDocumentItems :: (Text -> Bool) -> ItemGetter
-getDocumentItems p = concatMap (getContexts (p.surface) . (period:) . filter (not.punctuation))
+getDocumentItems p = liftM concat . mapM (return . getContexts (p.surface) . (period:) . filter (not.punctuation))
     where punctuation t = surface t `elem` [","]
 
 type Restriction = (Int,Int)

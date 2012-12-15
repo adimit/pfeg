@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveFunctor, TupleSections, FlexibleInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-} -- holy language extensions batman.
+{-# LANGUAGE RankNTypes, BangPatterns, DeriveFunctor, TupleSections, FlexibleInstances, ExistentialQuantification, OverloadedStrings, FlexibleContexts, ScopedTypeVariables #-} -- holy language extensions batman.
 module Main where
 
 import Control.Concurrent (ThreadId,killThread,forkIO)
@@ -423,7 +423,7 @@ extractRandomSample st it1 session (cName,cFile) = do
     putStrLn "Acquiring sample."
     let sampleit = I.mapChunks (toUnicode (corpusConverter session)) -- convert BS to unicode Text
                    I.><> I.convStream it1 -- parse the Text into Document Text
-                   I.><> I.mapChunks (getDocumentItems (`elem` targets session)) -- Turn Documents into [Item Text]
+                   I.><> I.mapChunksM (getDocumentItems (`elem` targets session)) -- Turn Documents into [Item Text]
                    I.=$ selectSampleI logVar spl -- select a sample of all [Item Text]s
     items <- evalPFEG (I.run =<< enumFile (chunkSize session) cFile sampleit) st session
     killThread threadID
@@ -451,7 +451,7 @@ recordF chan stmt s = do
 -- Apply the processor for every item (and get items with the supplied
 -- "ItemGetter".
 itemIteratee :: ItemGetter -> ItemProcessor st -> Iteratee (Document Text) (PFEG st) ()
-itemIteratee gI proc = I.mapChunksM_ $ mapM proc . gI
+itemIteratee gI proc = I.mapChunksM_ (gI >=> mapM_ proc)
 
 -- Apply the processor for every sentence
 sentenceIteratee :: SentenceProcessor st -> Iteratee (Sentence Text) (PFEG st) ()
