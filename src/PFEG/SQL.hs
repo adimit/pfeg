@@ -26,12 +26,6 @@ upsertRecord = "INSERT INTO records (lcs,rcs,lcl,rcl,target) VALUES (?,?,?,?,?)"
 insertText :: String
 insertText = "INSERT INTO records (surface,lemma) VALUES (?,?)"
 
-insertSentenceHash :: String
-insertSentenceHash = "INSERT IGNORE INTO hashes VALUES (UNHEX(SHA1(?)))"
-
-selectSentenceHash :: String
-selectSentenceHash = "SELECT HEX(b) FROM hashes WHERE b = UNHEX(SHA1(?))"
-
 -- | Prepare a @Sentence Text@ for use with @insertText@.
 sentence2SQL :: Sentence Text -> [SqlValue]
 sentence2SQL s = [sqlify surface, sqlify lemma]
