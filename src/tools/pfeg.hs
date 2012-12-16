@@ -121,12 +121,14 @@ process session = do
         Learn{ corpus = cs } -> do
           chan <- newChan
           void $ forkIO (evalPFEG (forever $ learnLogger log chan) () session)
-          randomSample <- extractRandomSample () (documentI res) session cs
+          let ig = getDocumentItems (`elem` targets session)
+          randomSample <- extractRandomSample ig () (documentI res) session cs
           (threadID,logVar) <- evalPFEG (statusUpdater' "to process sample" sampleSize) () session
           void $ evalPFEG (mapM (learnF logVar qg chan) randomSample) 0 session
           killThread threadID
         Predict { corpus = cs } -> do
-          randomSample <- extractRandomSample () (documentI res) session cs
+          let ig = getUniqueDocumentItems (`elem` targets session)
+          randomSample <- extractRandomSample ig () (documentI res) session cs
           (threadID,logVar) <- evalPFEG (statusUpdater' "to process sample" sampleSize) () session
           void $ evalPFEG (mapM (predictF logVar qg log) randomSample) initialScore session
           killThread threadID
@@ -407,8 +409,8 @@ workOnCorpora action tchan it1 it2 session st = mapM_ $ \ c@(cName,cFile) -> do
 
 -- Same as workOnCorpora but samples its corpus instead. It then returns
 -- a randomized list of items, that can then be further processed.
-extractRandomSample :: st -> I.Iteratee Text (PFEG st) (Document Text) -> PFEGConfig -> Corpus -> IO [Item Text]
-extractRandomSample st it1 session (cName,cFile) = do
+extractRandomSample :: ItemGetter -> st -> I.Iteratee Text (PFEG st) (Document Text) -> PFEGConfig -> Corpus -> IO [Item Text]
+extractRandomSample ig st it1 session (cName,cFile) = do
     let (sampleFrom,sampleSize) = sample session
     (threadID,logVar) <- evalPFEG (statusUpdater' "sampling process" sampleSize) () session
     putStrLn $ "Sampling " ++ show sampleSize ++ " items from " ++ show sampleFrom
@@ -417,7 +419,7 @@ extractRandomSample st it1 session (cName,cFile) = do
     putStrLn "Acquiring sample."
     let sampleit = I.mapChunks (toUnicode (corpusConverter session)) -- convert BS to unicode Text
                    I.><> I.convStream it1 -- parse the Text into Document Text
-                   I.><> I.mapChunksM (getDocumentItems (`elem` targets session)) -- Turn Documents into [Item Text]
+                   I.><> I.mapChunksM ig -- Turn Documents into [Item Text]
                    I.=$ selectSampleI logVar spl -- select a sample of all [Item Text]s
     items <- evalPFEG (I.run =<< enumFile (chunkSize session) cFile sampleit) st session
     killThread threadID
