@@ -24,6 +24,7 @@ import qualified Data.Text as T
 
 patternRestriction :: MatchPattern -> Restriction
 patternRestriction MatchPattern { leftWindow = Match { size = l } , rightWindow = Match { size = r } } = (l,r)
+patternRestriction NoPattern = (0,0)
 
 parseWeight :: Parser Double
 parseWeight = do

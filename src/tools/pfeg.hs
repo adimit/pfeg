@@ -259,8 +259,8 @@ score (Right _) target = do
     if target == mb
        then modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1
                         , baselineCorrect   = baselineCorrect s + 1
-                        , correctItems      = correctItems s + 1 }) >> return (True,Baseline undefined)
-       else modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1 }) >> return (False,Baseline undefined)
+                        , correctItems      = correctItems s + 1 }) >> return (True,Baseline NoPattern)
+       else modify' (\s -> s { baselineFallbacks = baselineFallbacks s + 1 }) >> return (False,Baseline NoPattern)
 score (Left w) target =
     if target == predictedWord w
         then modify' (\s -> s { correctItems = correctItems s + 1

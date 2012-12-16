@@ -53,15 +53,20 @@ data MatchPattern = MatchPattern { leftWindow  :: !Match
                                  , level :: !Level
                                  , tolerance :: !Int
                                  , weight :: !Double }
+                  | NoPattern
 
 -- | Two patterns are equal even if their weights differ
 instance Eq MatchPattern where
+    NoPattern == NoPattern = True
+    NoPattern == _ = False
+    _ == NoPattern = False
     m == m' = leftWindow m == leftWindow m' && rightWindow m == rightWindow m' && level m == level m' && tolerance m == tolerance m'
 
 -- | Weights don't factor into the hash, so we'll score them the same. Note
 -- that hashes are only guaranteed to be unique for context windows < 20
 -- and tolerances < 5.
 instance Hashable MatchPattern where
+    hash NoPattern = 0
     hash m = let x = 20 * size (leftWindow m) + size (rightWindow m) + 5 * tolerance m 
               in if level m == Surface then x else x*x
 
@@ -77,10 +82,12 @@ instance Show Match where
     show Match { size = s } = show s
 
 instance Show MatchPattern where
+    show NoPattern = "NoPattern"
     show mp = showShort mp ++ '|':show (weight mp)
 
 -- | Like "MatchPattern"'s "Show" instance, but without showing the weight
 showShort :: MatchPattern -> String
+showShort NoPattern = "NoPattern"
 showShort mp = show (level mp) ++ show (leftWindow mp) ++ '-':show (rightWindow mp) ++ '~':show (tolerance mp)
 
 data Context a = Context { left  :: ![a] , right :: ![a] } deriving (Functor,Show,Foldable,Traversable)
