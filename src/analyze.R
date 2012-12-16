@@ -46,7 +46,7 @@ print(acccov + theme1)
 dev.off()
 
 writeLines("Accuracy and coverage for patterns:\n============================")
-print(pfeg.stats)
+print(pfeg.stats[with(pfeg.stats, order(accuracy)),])
 writeLines("Accuracy for prediction candidates:\n============================")
 print(ddply(dcast(pfeg[pfeg$hits > 0,], candidate ~ isCorrect,value.var="hits"), .(Correct/(Correct + Incorrect))))
 
@@ -78,3 +78,7 @@ printConvergenceGraphs <- function(convg,stepsize=100) {
 }
 
 printConvergenceGraphs(makeConvergence())
+
+meanQueryTime <- sum(dcast(pfeg[,c("itemID","queryTime")],itemID ~ ., fun.aggregate=mean,value.var="queryTime")[,2])/length(pfeg$queryTime)
+writeLines(paste("Mean cohort query execution time:",meanQueryTime,"seconds"))
+writeLines(paste("Baseline",baseline))
