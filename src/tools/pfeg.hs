@@ -377,12 +377,6 @@ instance (RenderLog a) => RenderLog [a] where
 instance RenderLog Query where
     renderLog = queryString
 
-wrap :: Char -> Text -> Text
-wrap c = wrap2 c c
-
-wrap2 :: Char -> Char -> Text -> Text
-wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
-
 -- This is the most complicated part. For every corpus file, it first forks
 -- a status updater. It then constructs an Iteratee that will a)
 -- update the status logger, b) process the corpus file. At the end of each

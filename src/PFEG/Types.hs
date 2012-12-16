@@ -15,12 +15,15 @@ module PFEG.Types
     , Regexes(..)
     , Corpus
     , Name
+    , wrap
+    , wrap2
     ) where
 
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
 import Data.Hashable
 import Data.Text (Text)
+import qualified Data.Text as T
 
 import Control.Concurrent.Chan
 import Data.Text.ICU.Convert
@@ -112,4 +115,10 @@ data Regexes = Regexes
      , timeRegex    :: Regex -- ^ when tagged CARD and matching this, surface is TIME
      , cardTag :: Text -- ^ The pos tag that represents cardinalities
      }
+
+wrap :: Char -> Text -> Text
+wrap c = wrap2 c c
+
+wrap2 :: Char -> Char -> Text -> Text
+wrap2 a b t = T.cons a $ T.concat [t, T.singleton b]
 

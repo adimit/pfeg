@@ -62,9 +62,6 @@ renderLevel :: Level -> Text
 renderLevel Surface = "@surface"
 renderLevel Lemma   = "@lemma"
 
-wrap :: Char -> Text -> Text
-wrap c x = T.cons c $ T.concat [x, T.singleton c]
-
 renderTolerance :: Int -> Text
 renderTolerance t | t <= 1    = T.empty
                   | otherwise = if t > 0 then T.pack ('~':show t) else T.empty
