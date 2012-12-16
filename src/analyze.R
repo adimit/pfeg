@@ -35,7 +35,7 @@ baseline = max(targets$count) / sum(targets$count)
 # Accuracy/Coverage graph
 acccov <- ggplot(pfeg.stats,aes(accuracy,coverage,label=pattern)) + geom_text(hjust=0,vjust=0,size=8) + geom_point() +
 	labs(x="Accuracy", y="Coverage") + expand_limits(x=c(0.2,1),y=c(0.2,1)) +
-	geom_smooth(method="lm") +
+	geom_smooth(method="lm",formula=y ~ poly(x,3,raw=T)) +
 	annotate("segment", x=baseline,xend=baseline,y=0.1,yend=1,colour="red") +
 	annotate("text", x=baseline+0.06,y=0.4,label="baseline", colour="red",size=10)
 
