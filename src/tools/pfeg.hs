@@ -242,7 +242,9 @@ predictF statusChan qg log (target,context) = do
         log . Status . T.pack . show . M.toList $ falsePositives s
         log . Stats $ [ T.pack . show . totalItems $ s
                       , if isBaseline prediction then majorityBaseline session else predictedWord prediction
+                      , T.unwords . map surface . left $ context
                       , surface target
+                      , T.unwords . map surface . right $ context
                       , if isBaseline prediction then "Baseline" else T.pack . show . pattern $ prediction
                       , if isBaseline prediction then T.singleton '0' else T.pack . show . hits $ prediction
                       , if success then "Correct" else "Incorrect" ]
